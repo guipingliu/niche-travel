@@ -1,0 +1,120 @@
+// Prisma Schema for Niche Travel
+// Database: MySQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// 用户表
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      String   @default("admin")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+// 领队表
+model Giver {
+  id        String   @id @default(cuid())
+  name      String
+  avatar    String
+  bio       String   @db.Text
+  tags      String   @db.Text // JSON array stored as text
+  routes    Route[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("givers")
+}
+
+// 路线表
+model Route {
+  id            String     @id @default(cuid())
+  title         String
+  description   String     @db.Text
+  price         Int
+  duration      String
+  intensity     Int        // 1-5
+  groupSize     Int
+  tags          String     @db.Text // JSON array stored as text
+  images        String     @db.Text // JSON array stored as text
+  nextDeparture DateTime?
+  mapImage      String?    @db.Text
+  giverId       String
+  giver         Giver      @relation(fields: [giverId], references: [id], onDelete: Cascade)
+  itinerary     RouteDay[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([giverId])
+  @@map("routes")
+}
+
+// 行程天数表
+model RouteDay {
+  id          String     @id @default(cuid())
+  routeId     String
+  route       Route      @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  day         Int
+  title       String
+  description String     @db.Text
+  activities  Activity[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([routeId])
+  @@map("route_days")
+}
+
+// 活动表
+model Activity {
+  id         String    @id @default(cuid())
+  routeDayId String
+  routeDay   RouteDay  @relation(fields: [routeDayId], references: [id], onDelete: Cascade)
+  name       String
+  image      String?   @db.Text
+  order      Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([routeDayId])
+  @@map("activities")
+}
+
+// 景点表
+model Attraction {
+  id             String   @id @default(cuid())
+  name           String
+  location       String
+  description    String   @db.Text
+  hiddenGemScore Int      // 1-10
+  vibeTags       String   @db.Text // JSON array stored as text
+  images         String   @db.Text // JSON array stored as text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("attractions")
+}
+
+// 旅行锦囊表
+model Suggestion {
+  id        String   @id @default(cuid())
+  title     String
+  category  String   // Preparation, Culture, Safety, Food
+  content   String   @db.Text
+  author    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("suggestions")
+}
