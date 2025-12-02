@@ -1,9 +1,8 @@
-
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, Eye, Map, MapPin } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
 import {
   Box,
   Typography,
@@ -20,127 +19,18 @@ import {
   DialogActions,
   Grid
 } from '@mui/material';
-import RouteForm from '../components/RouteForm';
-
-// Fix Leaflet marker icon issue
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-
-let DefaultIcon = L.icon({
-  iconUrl: icon,
-  shadowUrl: iconShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41]
-});
-
-L.Marker.prototype.options.icon = DefaultIcon;
-
-type Difficulty = 'easy' | 'medium' | 'hard';
-
-interface Route {
-  id: number;
-  name: string;
-  posterImage: string;
-  difficulty: Difficulty;
-  tags: string[];
-  hasGuide: boolean;
-  guideInfo?: {
-    name: string;
-    age: number;
-    experience: string;
-  };
-  isPaid: boolean;
-  price?: number;
-  priceIncludes?: string;
-  waypoints: Array<{
-    description: string;
-    images: string[];
-    lat?: number;
-    lng?: number;
-    locationName?: string;
-  }>;
-}
-
-const mockRoutes: Route[] = [
-  {
-    id: 1,
-    name: '西藏雪山探险',
-    posterImage: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-    difficulty: 'hard',
-    tags: ['登山', '探险', '高原'],
-    hasGuide: true,
-    guideInfo: {
-      name: '张伟',
-      age: 35,
-      experience: '10年登山经验，西藏本地向导',
-    },
-    isPaid: true,
-    price: 12800,
-    priceIncludes: '包含全程交通、住宿、向导费、门票及保险',
-    waypoints: [
-      {
-        description: '拉萨布达拉宫，世界文化遗产',
-        images: ['https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400'],
-        lat: 29.65,
-        lng: 91.11,
-        locationName: '布达拉宫'
-      },
-      {
-        description: '珠穆朗玛峰大本营，海拔5200米',
-        images: ['https://images.unsplash.com/photo-1519681393784-d120267933ba?w=400'],
-        lat: 28.14,
-        lng: 86.85,
-        locationName: '珠峰大本营'
-      },
-    ],
-  },
-  {
-    id: 2,
-    name: '江南水乡之旅',
-    posterImage: 'https://images.unsplash.com/photo-1512529904539-2034f9e1c8b9?w=400',
-    difficulty: 'easy',
-    tags: ['文化', '休闲', '古镇'],
-    hasGuide: true,
-    guideInfo: {
-      name: '李娜',
-      age: 28,
-      experience: '5年导游经验，历史文化专家',
-    },
-    isPaid: true,
-    price: 3500,
-    priceIncludes: '包含酒店住宿、景点门票、早餐',
-    waypoints: [
-      {
-        description: '周庄古镇，中国第一水乡',
-        images: ['https://images.unsplash.com/photo-1512529904539-2034f9e1c8b9?w=400'],
-        lat: 31.11,
-        lng: 120.85,
-        locationName: '周庄古镇'
-      },
-    ],
-  },
-];
+import { useRouteStore } from '../store/routeStore';
+import type { Route, Difficulty } from '../store/routeStore';
 
 export default function RoutesPage() {
-  const [routes, setRoutes] = useState<Route[]>(mockRoutes);
-  const [showForm, setShowForm] = useState(false);
-  const [editingRoute, setEditingRoute] = useState<Route | null>(null);
+  const navigate = useNavigate();
+  const { routes, deleteRoute } = useRouteStore();
   const [viewingRoute, setViewingRoute] = useState<Route | null>(null);
 
   const handleDelete = (id: number) => {
     if (confirm('确定要删除这条线路吗？')) {
-      setRoutes(routes.filter(route => route.id !== id));
+      deleteRoute(id);
     }
-  };
-
-  const handleSave = (routeData: Omit<Route, 'id'>) => {
-    if (editingRoute) {
-      setRoutes(routes.map(r => r.id === editingRoute.id ? { ...routeData, id: editingRoute.id } : r));
-    } else {
-      setRoutes([...routes, { ...routeData, id: routes.length + 1 }]);
-    }
-    setShowForm(false);
-    setEditingRoute(null);
   };
 
   const difficultyLabels: Record<Difficulty, string> = {
@@ -169,38 +59,11 @@ export default function RoutesPage() {
         <Button
           variant="contained"
           startIcon={<Plus size={20} />}
-          onClick={() => setShowForm(true)}
+          onClick={() => navigate('/routes/new')}
         >
           新增线路
         </Button>
       </Box>
-
-      {/* Form Dialog */}
-      <Dialog
-        open={showForm || !!editingRoute}
-        onClose={() => {
-          setShowForm(false);
-          setEditingRoute(null);
-        }}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
-          {editingRoute ? '编辑线路' : '新增线路'}
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2 }}>
-            <RouteForm
-              route={editingRoute || undefined}
-              onSave={handleSave}
-              onCancel={() => {
-                setShowForm(false);
-                setEditingRoute(null);
-              }}
-            />
-          </Box>
-        </DialogContent>
-      </Dialog>
 
       <Stack spacing={3}>
         {routes.map((route) => (
@@ -255,7 +118,7 @@ export default function RoutesPage() {
                     <IconButton onClick={() => setViewingRoute(route)} color="default">
                       <Eye size={20} />
                     </IconButton>
-                    <IconButton onClick={() => setEditingRoute(route)} color="primary">
+                    <IconButton onClick={() => navigate(`/routes/${route.id}/edit`)} color="primary">
                       <Pencil size={20} />
                     </IconButton>
                     <IconButton onClick={() => handleDelete(route.id)} color="error">
@@ -279,7 +142,7 @@ export default function RoutesPage() {
           <Button
             variant="contained"
             startIcon={<Plus size={20} />}
-            onClick={() => setShowForm(true)}
+            onClick={() => navigate('/routes/new')}
             sx={{ mt: 3 }}
           >
             新增线路
@@ -299,7 +162,7 @@ export default function RoutesPage() {
             <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               {viewingRoute.name}
               <IconButton onClick={() => setViewingRoute(null)}>
-                <Trash2 size={20} style={{ opacity: 0 }} /> {/* Placeholder for alignment if needed, or just use close icon */}
+                <Trash2 size={20} style={{ opacity: 0 }} />
                 <Box component="span" sx={{ fontSize: '1.5rem', cursor: 'pointer' }} onClick={() => setViewingRoute(null)}>×</Box>
               </IconButton>
             </DialogTitle>

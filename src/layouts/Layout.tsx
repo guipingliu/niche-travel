@@ -1,14 +1,12 @@
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
-import { Box, Toolbar, useMediaQuery, useTheme } from '@mui/material';
+import { Box, Toolbar } from '@mui/material';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 
 const drawerWidth = 240;
 
 export default function Layout() {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleDrawerToggle = () => {
