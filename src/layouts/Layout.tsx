@@ -1,19 +1,43 @@
+import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { Box, Toolbar, useMediaQuery, useTheme } from '@mui/material';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 
+const drawerWidth = 240;
+
 export default function Layout() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const handleDrawerToggle = () => {
+    setMobileOpen(!mobileOpen);
+  };
+
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6 scroll-smooth">
-          <div className="w-full animate-fade-in">
-            <Outlet />
-          </div>
-        </main>
-      </div>
-    </div>
+    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+      <Header handleDrawerToggle={handleDrawerToggle} drawerWidth={drawerWidth} />
+      <Sidebar
+        mobileOpen={mobileOpen}
+        handleDrawerToggle={handleDrawerToggle}
+        drawerWidth={drawerWidth}
+      />
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          width: { sm: `calc(100% - ${drawerWidth}px)` },
+          bgcolor: 'background.default',
+          minHeight: '100vh',
+        }}
+      >
+        <Toolbar /> {/* Spacer for fixed AppBar */}
+        <Box sx={{ maxWidth: 'lg', mx: 'auto', animation: 'fadeIn 0.5s ease-out' }}>
+          <Outlet />
+        </Box>
+      </Box>
+    </Box>
   );
 }

@@ -1,17 +1,49 @@
 import { useState } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
-import { X, Plus, Upload } from 'lucide-react';
+import { useForm, useFieldArray, Controller } from 'react-hook-form';
+import {
+  Box,
+  TextField,
+  Button,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  RadioGroup,
+  Radio,
+  FormControlLabel,
+  FormLabel,
+  Stack,
+  Typography,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemText,
+  Grid,
+  Chip,
+  Paper
+} from '@mui/material';
+import { Plus, Trash2, Map as MapIcon, Search, Upload, X, ArrowUp, ArrowDown } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 
-interface Waypoint {
-  description: string;
-  images: string[];
-}
+// Fix Leaflet marker icon issue
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 
-interface GuideInfo {
-  name: string;
-  age: number;
-  experience: string;
-}
+let DefaultIcon = L.icon({
+  iconUrl: icon,
+  shadowUrl: iconShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
 
 interface RouteFormData {
   name: string;
@@ -19,54 +51,82 @@ interface RouteFormData {
   difficulty: 'easy' | 'medium' | 'hard';
   tags: string[];
   hasGuide: boolean;
-  guideInfo?: GuideInfo;
-  isPaid: boolean;
-  waypoints: Waypoint[];
+  guideInfo?: {
+    name: string;
+    age: number;
+    experience: string;
+  };
+  isPaid: boolean | string;
+  price?: number;
+  priceIncludes?: string;
+  waypoints: Array<{
+    description: string;
+    images: string[];
+    lat?: number;
+    lng?: number;
+    locationName?: string;
+    duration?: string;
+    distance?: string;
+  }>;
 }
 
 interface RouteFormProps {
-  route?: {
-    id: number;
-    name: string;
-    posterImage: string;
-    difficulty: 'easy' | 'medium' | 'hard';
-    tags: string[];
-    hasGuide: boolean;
-    guideInfo?: GuideInfo;
-    isPaid: boolean;
-    waypoints: Waypoint[];
-  };
-  onSave: (data: Omit<RouteFormData, 'id'>) => void;
+  route?: any;
+  onSave: (data: any) => void;
   onCancel: () => void;
+}
+
+function MapEvents({ onClick }: { onClick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onClick(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
 }
 
 export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
   const defaultValues: RouteFormData = route || {
     name: '',
     posterImage: '',
-    difficulty: 'medium',
+    difficulty: 'easy',
     tags: [],
-    hasGuide: false,
-    isPaid: true,
-    waypoints: [],
+    hasGuide: true,
+    isPaid: false,
+    waypoints: [
+      { description: '', images: [], locationName: '' },
+      { description: '', images: [], locationName: '' }
+    ],
   };
 
-  const { register, handleSubmit, control, watch, formState: { errors } } = useForm<RouteFormData>({
-    defaultValues,
+  const { register, handleSubmit, control, watch, getValues, formState: { errors } } = useForm<RouteFormData>({
+    defaultValues: {
+      ...defaultValues,
+      isPaid: String(defaultValues.isPaid)
+    },
   });
 
-  const { fields: waypointFields, append: appendWaypoint, remove: removeWaypoint } = useFieldArray({
+  const { fields: waypointFields, append: appendWaypoint, remove: removeWaypoint, update: updateWaypoint, move: moveWaypoint } = useFieldArray({
     control,
     name: 'waypoints',
   });
 
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>(defaultValues.tags || []);
-  const hasGuide = watch('hasGuide');
+  const isPaid = watch('isPaid');
+
+  // Map state
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [currentWaypointIndex, setCurrentWaypointIndex] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [selectedCoords, setSelectedCoords] = useState<[number, number] | null>(null);
+  const [tempLocation, setTempLocation] = useState<{ lat: number, lng: number, name: string } | null>(null);
 
   const onSubmit = (data: RouteFormData) => {
     onSave({
       ...data,
+      isPaid: String(data.isPaid) === 'true',
       tags,
     });
   };
@@ -89,258 +149,462 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
     }
   };
 
-  return (
-    <div className="bg-white shadow sm:rounded-lg">
-      <div className="px-4 py-5 sm:p-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-6">
-          {route ? '编辑线路' : '新增线路'}
-        </h3>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                线路名称 *
-              </label>
-              <input
-                type="text"
-                {...register('name', { required: '请输入线路名称' })}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-              />
-              {errors.name && (
-                <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>
-              )}
-            </div>
+  const searchLocation = async () => {
+    if (!searchQuery) return;
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`);
+      const data = await response.json();
+      setSearchResults(data);
+    } catch (error) {
+      console.error('Search failed:', error);
+    }
+  };
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                海报图 URL *
-              </label>
-              <input
-                type="url"
+  const handleSelectLocation = (result: any) => {
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    setSelectedCoords([lat, lng]);
+    setTempLocation({ lat, lng, name: result.display_name.split(',')[0] });
+    setSearchResults([]);
+  };
+
+  const handleMapClick = (lat: number, lng: number) => {
+    setTempLocation({ lat, lng, name: `Location (${lat.toFixed(4)}, ${lng.toFixed(4)})` });
+    setSelectedCoords([lat, lng]);
+  };
+
+  const saveLocationToWaypoint = () => {
+    if (currentWaypointIndex !== null && tempLocation) {
+      const currentWaypoint = getValues(`waypoints.${currentWaypointIndex}`);
+      updateWaypoint(currentWaypointIndex, {
+        ...currentWaypoint,
+        lat: tempLocation.lat,
+        lng: tempLocation.lng,
+        locationName: tempLocation.name
+      });
+      setShowMapModal(false);
+      setTempLocation(null);
+      setSelectedCoords(null);
+      setSearchQuery('');
+    }
+  };
+
+  const openMapForWaypoint = (index: number) => {
+    setCurrentWaypointIndex(index);
+    setShowMapModal(true);
+    const waypoint = getValues(`waypoints.${index}`);
+    if (waypoint.lat && waypoint.lng) {
+      setSelectedCoords([waypoint.lat, waypoint.lng]);
+      setTempLocation({ lat: waypoint.lat, lng: waypoint.lng, name: waypoint.locationName || '' });
+    }
+  };
+
+  const handleImageUpload = async (index: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const fileReaders = Array.from(files).map(file => {
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+      });
+
+      const newImages = await Promise.all(fileReaders);
+      const currentWaypoint = getValues(`waypoints.${index}`);
+      const currentImages = currentWaypoint.images || [];
+
+      updateWaypoint(index, {
+        ...currentWaypoint,
+        images: [...currentImages, ...newImages]
+      });
+    }
+  };
+
+  const handleRemoveImage = (waypointIndex: number, imageIndex: number) => {
+    const currentWaypoint = getValues(`waypoints.${waypointIndex}`);
+    const currentImages = currentWaypoint.images || [];
+    const newImages = currentImages.filter((_, i) => i !== imageIndex);
+    updateWaypoint(waypointIndex, { ...currentWaypoint, images: newImages });
+  };
+
+  const getPointLabel = (index: number) => {
+    return `途径点 ${index + 1}`;
+  };
+
+  const getPointColor = () => {
+    return 'text.primary';
+  };
+
+  return (
+    <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Scrollable Content */}
+      <Box sx={{ flex: 1, overflowY: 'auto', p: 1, pb: 10 }}>
+        <Stack spacing={3}>
+          <Grid container spacing={3}>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField
+                fullWidth
+                label="线路名称"
+                {...register('name', { required: '请输入线路名称' })}
+                error={!!errors.name}
+                helperText={errors.name?.message}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField
+                fullWidth
+                label="海报图 URL"
                 {...register('posterImage', { required: '请输入海报图URL' })}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                error={!!errors.posterImage}
+                helperText={errors.posterImage?.message}
                 placeholder="https://example.com/image.jpg"
               />
-              {errors.posterImage && (
-                <p className="mt-1 text-sm text-red-600">{errors.posterImage.message}</p>
-              )}
-            </div>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <FormControl fullWidth>
+                <InputLabel>难度</InputLabel>
+                <Controller
+                  name="difficulty"
+                  control={control}
+                  rules={{ required: true }}
+                  render={({ field }) => (
+                    <Select {...field} label="难度">
+                      <MenuItem value="easy">简单</MenuItem>
+                      <MenuItem value="medium">中等</MenuItem>
+                      <MenuItem value="hard">困难</MenuItem>
+                    </Select>
+                  )}
+                />
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <FormControl component="fieldset">
+                <FormLabel component="legend">参与方式</FormLabel>
+                <Controller
+                  name="isPaid"
+                  control={control}
+                  render={({ field }) => (
+                    <RadioGroup row {...field}>
+                      <FormControlLabel value="true" control={<Radio />} label="付费参与" />
+                      <FormControlLabel value="false" control={<Radio />} label="免费参与" />
+                    </RadioGroup>
+                  )}
+                />
+              </FormControl>
+            </Grid>
+          </Grid>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                难度 *
-              </label>
-              <select
-                {...register('difficulty', { required: true })}
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-              >
-                <option value="easy">简单</option>
-                <option value="medium">中等</option>
-                <option value="hard">困难</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                参与方式
-              </label>
-              <div className="mt-2 space-y-2">
-                <label className="inline-flex items-center">
-                  <input
-                    type="radio"
-                    {...register('isPaid')}
-                    value="true"
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+          {/* Paid Route Details */}
+          {String(isPaid) === 'true' && (
+            <Box sx={{ p: 2, bgcolor: 'primary.50', borderRadius: 1 }}>
+              <Grid container spacing={3}>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="价格 (元)"
+                    {...register('price', { required: String(isPaid) === 'true', min: 0 })}
+                    error={!!errors.price}
+                    helperText={errors.price?.message}
                   />
-                  <span className="ml-2 text-sm text-gray-700">付费参与</span>
-                </label>
-                <label className="inline-flex items-center ml-6">
-                  <input
-                    type="radio"
-                    {...register('isPaid')}
-                    value="false"
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    fullWidth
+                    label="费用包含"
+                    {...register('priceIncludes', { required: String(isPaid) === 'true' })}
+                    error={!!errors.priceIncludes}
+                    helperText={errors.priceIncludes?.message}
+                    placeholder="例如：交通、住宿、保险"
                   />
-                  <span className="ml-2 text-sm text-gray-700">免费参与</span>
-                </label>
-              </div>
-            </div>
-          </div>
+                </Grid>
+              </Grid>
+            </Box>
+          )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              标签
-            </label>
-            <div className="flex">
-              <input
-                type="text"
+          {/* Tags */}
+          <Box>
+            <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+              <TextField
+                label="添加标签"
+                size="small"
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="flex-1 block w-full border border-gray-300 rounded-l-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder="输入标签后按回车"
+                sx={{ width: 200 }}
               />
-              <button
-                type="button"
-                onClick={handleAddTag}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-r-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
+              <Button variant="outlined" onClick={handleAddTag} startIcon={<Plus size={16} />}>
+                添加
+              </Button>
+            </Box>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               {tags.map((tag) => (
-                <span
+                <Chip
                   key={tag}
-                  className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveTag(tag)}
-                    className="ml-1 text-blue-600 hover:text-blue-800"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
+                  label={tag}
+                  onDelete={() => handleRemoveTag(tag)}
+                  color="primary"
+                  variant="outlined"
+                />
               ))}
-            </div>
-          </div>
+            </Stack>
+          </Box>
 
-          <div className="border-t border-gray-200 pt-6">
-            <div className="flex items-center mb-4">
-              <input
-                type="checkbox"
-                {...register('hasGuide')}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label className="ml-2 text-sm font-medium text-gray-700">
-                是否有领队
-              </label>
-            </div>
+          {/* Waypoints */}
+          <Box>
+            <Typography variant="h6" sx={{ mb: 2 }}>路线规划</Typography>
 
-            {hasGuide && (
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-3 bg-gray-50 p-4 rounded-lg">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    领队姓名 *
-                  </label>
-                  <input
-                    type="text"
-                    {...register('guideInfo.name', { required: hasGuide })}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    年龄 *
-                  </label>
-                  <input
-                    type="number"
-                    {...register('guideInfo.age', { required: hasGuide, valueAsNumber: true })}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    经验描述 *
-                  </label>
-                  <input
-                    type="text"
-                    {...register('guideInfo.experience', { required: hasGuide })}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    placeholder="例如：5年登山经验"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="border-t border-gray-200 pt-6">
-            <div className="flex justify-between items-center mb-4">
-              <h4 className="text-lg font-medium text-gray-900">途径点</h4>
-              <button
-                type="button"
-                onClick={() => appendWaypoint({ description: '', images: [] })}
-                className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-blue-700 bg-blue-100 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                添加途径点
-              </button>
-            </div>
-
-            <div className="space-y-6">
+            <Stack spacing={3}>
               {waypointFields.map((field, index) => (
-                <div key={field.id} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-4">
-                    <h5 className="font-medium text-gray-900">途径点 {index + 1}</h5>
-                    <button
-                      type="button"
-                      onClick={() => removeWaypoint(index)}
-                      className="text-gray-400 hover:text-gray-500"
-                    >
-                      <X className="h-5 w-5" />
-                    </button>
-                  </div>
+                <Box key={field.id} sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1, position: 'relative' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, alignItems: 'center' }}>
+                    <Stack direction="row" spacing={2} alignItems="center">
+                      <Typography
+                        variant="subtitle1"
+                        fontWeight="bold"
+                        sx={{ color: getPointColor() }}
+                      >
+                        {getPointLabel(index)}
+                      </Typography>
+                    </Stack>
 
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        描述 *
-                      </label>
-                      <textarea
-                        {...register(`waypoints.${index}.description` as const, { required: true })}
+                    <Stack direction="row" spacing={1}>
+                      <IconButton
+                        size="small"
+                        onClick={() => index > 0 && moveWaypoint(index, index - 1)}
+                        disabled={index === 0}
+                      >
+                        <ArrowUp size={16} />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => index < waypointFields.length - 1 && moveWaypoint(index, index + 1)}
+                        disabled={index === waypointFields.length - 1}
+                      >
+                        <ArrowDown size={16} />
+                      </IconButton>
+                      <IconButton size="small" color="error" onClick={() => removeWaypoint(index)}>
+                        <Trash2 size={16} />
+                      </IconButton>
+                    </Stack>
+                  </Box>
+
+                  <Grid container spacing={2}>
+                    <Grid size={12}>
+                      <TextField
+                        fullWidth
+                        multiline
                         rows={2}
-                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        placeholder="描述这个途径点的特色和体验"
+                        label="描述"
+                        {...register(`waypoints.${index}.description` as const, { required: '请输入描述' })}
+                        error={!!errors.waypoints?.[index]?.description}
+                        helperText={errors.waypoints?.[index]?.description?.message}
+                        InputLabelProps={{ shrink: true }}
                       />
-                    </div>
+                    </Grid>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        图片 URLs (每行一个)
-                      </label>
-                      <textarea
-                        {...register(`waypoints.${index}.images` as const)}
-                        rows={3}
-                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        placeholder="https://example.com/image1.jpg&#10;https://example.com/image2.jpg"
-                      />
-                      <p className="mt-1 text-sm text-gray-500">
-                        每行输入一个图片URL，留空则无图片
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                    {/* Duration and Distance - Show for all except Start point (index 0) */}
+                    {index !== 0 && (
+                      <>
+                        <Grid size={{ xs: 6 }}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            label="距离上一节点 (km)"
+                            {...register(`waypoints.${index}.distance` as const)}
+                            placeholder="例如: 5.2"
+                            InputLabelProps={{ shrink: true }}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 6 }}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            label="预计耗时"
+                            {...register(`waypoints.${index}.duration` as const)}
+                            placeholder="例如: 2小时"
+                            InputLabelProps={{ shrink: true }}
+                          />
+                        </Grid>
+                      </>
+                    )}
+
+                    <Grid size={12}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                        <Button
+                          variant="outlined"
+                          startIcon={<MapIcon size={16} />}
+                          onClick={() => openMapForWaypoint(index)}
+                        >
+                          {getValues(`waypoints.${index}.locationName`) ? '修改位置' : '选择位置'}
+                        </Button>
+                        {getValues(`waypoints.${index}.locationName`) && (
+                          <Typography variant="body2" color="text.secondary">
+                            已选: {getValues(`waypoints.${index}.locationName`)}
+                          </Typography>
+                        )}
+
+                        <Button
+                          component="label"
+                          variant="outlined"
+                          startIcon={<Upload size={16} />}
+                        >
+                          上传图片
+                          <input
+                            type="hidden"
+                            {...register(`waypoints.${index}.images` as const)}
+                          />
+                          <input
+                            type="file"
+                            hidden
+                            multiple
+                            accept="image/*"
+                            onChange={(e) => handleImageUpload(index, e)}
+                          />
+                        </Button>
+                      </Box>
+
+                      {/* Image Previews */}
+                      {field.images && field.images.length > 0 && (
+                        <Stack direction="row" spacing={1} sx={{ mt: 2, overflowX: 'auto', pb: 1 }}>
+                          {field.images.map((img, imgIndex) => (
+                            <Box key={imgIndex} sx={{ position: 'relative', width: 80, height: 80, flexShrink: 0 }}>
+                              <Box
+                                component="img"
+                                src={img}
+                                alt={`Preview ${imgIndex}`}
+                                sx={{ width: '100%', height: '100%', borderRadius: 1, objectFit: 'cover' }}
+                              />
+                              <IconButton
+                                size="small"
+                                sx={{
+                                  position: 'absolute',
+                                  top: -8,
+                                  right: -8,
+                                  bgcolor: 'background.paper',
+                                  boxShadow: 1,
+                                  '&:hover': { bgcolor: 'background.paper' },
+                                  p: 0.5
+                                }}
+                                onClick={() => handleRemoveImage(index, imgIndex)}
+                              >
+                                <X size={12} />
+                              </IconButton>
+                            </Box>
+                          ))}
+                        </Stack>
+                      )}
+
+                      <input type="hidden" {...register(`waypoints.${index}.lat` as const)} />
+                      <input type="hidden" {...register(`waypoints.${index}.lng` as const)} />
+                      <input type="hidden" {...register(`waypoints.${index}.locationName` as const)} />
+                    </Grid>
+                  </Grid>
+                </Box>
               ))}
-            </div>
+            </Stack>
+          </Box>
+        </Stack>
+      </Box>
 
-            {waypointFields.length === 0 && (
-              <div className="text-center py-8 border-2 border-dashed border-gray-300 rounded-lg">
-                <Upload className="mx-auto h-12 w-12 text-gray-400" />
-                <p className="mt-2 text-sm text-gray-500">暂无途径点</p>
-                <p className="text-sm text-gray-500">点击上方按钮添加途径点</p>
-              </div>
-            )}
-          </div>
+      {/* Sticky Footer */}
+      <Paper
+        elevation={3}
+        sx={{
+          position: 'sticky',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          p: 2,
+          bgcolor: 'background.paper',
+          zIndex: 10,
+          borderTop: '1px solid',
+          borderColor: 'divider',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}
+      >
+        <Button
+          variant="outlined"
+          startIcon={<Plus size={16} />}
+          onClick={() => appendWaypoint({ description: '', images: [], lat: undefined, lng: undefined, locationName: '' })}
+        >
+          添加途径点
+        </Button>
 
-          <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button variant="outlined" onClick={onCancel}>取消</Button>
+          <Button variant="contained" type="submit">保存</Button>
+        </Box>
+      </Paper>
+
+      {/* Map Modal */}
+      <Dialog
+        open={showMapModal}
+        onClose={() => setShowMapModal(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>选择位置</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2, display: 'flex', gap: 1, mt: 1 }}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="搜索地点 (例如: 北京)"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && searchLocation()}
+            />
+            <Button variant="contained" onClick={searchLocation} startIcon={<Search size={16} />}>
+              搜索
+            </Button>
+          </Box>
+
+          {searchResults.length > 0 && (
+            <List sx={{ maxHeight: 200, overflow: 'auto', mb: 2, bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+              {searchResults.map((result, idx) => (
+                <ListItem key={idx} disablePadding>
+                  <ListItemButton onClick={() => handleSelectLocation(result)}>
+                    <ListItemText primary={result.display_name} />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          )}
+
+          <Box sx={{ height: 400, width: '100%', borderRadius: 1, overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}>
+            <MapContainer
+              center={selectedCoords || [35, 105]}
+              zoom={4}
+              style={{ height: '100%', width: '100%' }}
             >
-              取消
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              保存线路
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              />
+              <MapEvents onClick={handleMapClick} />
+              {tempLocation && (
+                <Marker position={[tempLocation.lat, tempLocation.lng]} />
+              )}
+            </MapContainer>
+          </Box>
+
+          {tempLocation && (
+            <Typography variant="body2" sx={{ mt: 2 }}>
+              已选位置: {tempLocation.name} ({tempLocation.lat.toFixed(4)}, {tempLocation.lng.toFixed(4)})
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowMapModal(false)}>取消</Button>
+          <Button onClick={saveLocationToWaypoint} variant="contained" disabled={!tempLocation}>
+            确认选择
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }
