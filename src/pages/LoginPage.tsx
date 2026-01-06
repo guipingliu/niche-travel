@@ -169,7 +169,7 @@ export default function LoginPage() {
                     </div>
                   </div>
                   <div className="mt-6 text-center text-sm text-gray-500 bg-gray-50 py-2 rounded-lg border border-gray-200">
-                    admin@example.com / password
+                    admin@example.com / 1
                   </div>
                 </div>
               </form>

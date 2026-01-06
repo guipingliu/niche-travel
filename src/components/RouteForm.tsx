@@ -50,7 +50,7 @@ L.Marker.prototype.options.icon = DefaultIcon;
 
 interface RouteFormData {
   name: string;
-  posterImage: string;
+  posterImages: string[]; // 改为数组
   difficulty: 'easy' | 'medium' | 'hard';
   tags: string[];
   hasGuide: boolean;
@@ -103,7 +103,7 @@ function MapEvents({ onClick }: { onClick: (lat: number, lng: number) => void })
 export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
   const defaultValues: RouteFormData = route || {
     name: '',
-    posterImage: '',
+    posterImages: [],
     difficulty: 'easy',
     tags: [],
     hasGuide: true,
@@ -114,7 +114,7 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
     ],
   };
 
-  const { register, handleSubmit, control, watch, getValues, formState: { errors } } = useForm<RouteFormData>({
+  const { register, handleSubmit, control, watch, getValues, setValue, formState: { errors } } = useForm<RouteFormData>({
     defaultValues: {
       ...defaultValues,
       isPaid: String(defaultValues.isPaid)
@@ -128,6 +128,7 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
 
   const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>(defaultValues.tags || []);
+  const [posterImages, setPosterImages] = useState<string[]>(defaultValues.posterImages || []);
   const isPaid = watch('isPaid');
 
   // Map state
@@ -138,11 +139,16 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
   const [selectedCoords, setSelectedCoords] = useState<[number, number] | null>(null);
   const [tempLocation, setTempLocation] = useState<{ lat: number, lng: number, name: string } | null>(null);
 
+  // Cancel confirmation dialog state
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+
   const onSubmit = (data: RouteFormData) => {
     onSave({
       ...data,
       isPaid: String(data.isPaid) === 'true',
       tags,
+      posterImages,
+      posterImage: posterImages[0] || '', // 保持向后兼容
     });
   };
 
@@ -243,6 +249,41 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
     updateWaypoint(waypointIndex, { ...currentWaypoint, images: newImages });
   };
 
+  // 海报图片上传处理
+  const handlePosterImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const fileReaders = Array.from(files).map(file => {
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+      });
+
+      const newImages = await Promise.all(fileReaders);
+      setPosterImages([...posterImages, ...newImages]);
+    }
+  };
+
+  const handleRemovePosterImage = (imageIndex: number) => {
+    setPosterImages(posterImages.filter((_, i) => i !== imageIndex));
+  };
+
+  // Handle cancel with confirmation
+  const handleCancelClick = () => {
+    setShowCancelDialog(true);
+  };
+
+  const handleConfirmCancel = () => {
+    setShowCancelDialog(false);
+    onCancel();
+  };
+
+  const handleCloseCancelDialog = () => {
+    setShowCancelDialog(false);
+  };
+
   const getPointLabel = (index: number) => {
     return `途径点 ${index + 1}`;
   };
@@ -256,149 +297,344 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
       {/* Form Content */}
       <Box sx={{ pb: 10 }}>
         <Stack spacing={2.5}>
-          {/* 基本信息 */}
+          {/* 基本信息（重新设计） */}
           <Card variant="outlined">
-            <CardContent sx={{ p: 2.5 }}>
-              <Typography variant="subtitle1" fontWeight="600" sx={{ mb: 2 }}>
+            <CardContent sx={{ p: 3 }}>
+              <Typography variant="h6" fontWeight="600" sx={{ mb: 3 }}>
                 基本信息
               </Typography>
-              <Grid container spacing={2}>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="线路名称"
-                    {...register('name', { required: '请输入线路名称' })}
-                    error={!!errors.name}
-                    helperText={errors.name?.message}
-                  />
-                </Grid>
-                <Grid size={{ xs: 12, md: 6 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="海报图 URL"
-                    {...register('posterImage', { required: '请输入海报图URL' })}
-                    error={!!errors.posterImage}
-                    helperText={errors.posterImage?.message}
-                    placeholder="https://example.com/image.jpg"
-                  />
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>难度</InputLabel>
-                    <Controller
-                      name="difficulty"
-                      control={control}
-                      rules={{ required: true }}
-                      render={({ field }) => (
-                        <Select {...field} label="难度">
-                          <MenuItem value="easy">简单</MenuItem>
-                          <MenuItem value="medium">中等</MenuItem>
-                          <MenuItem value="hard">困难</MenuItem>
-                        </Select>
-                      )}
+
+              <Grid container spacing={3}>
+                {/* 左侧：表单输入 */}
+                <Grid size={{ xs: 12, md: 7 }}>
+                  <Stack spacing={2.5}>
+                    {/* 线路名称 */}
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="线路名称"
+                      {...register('name', { required: '请输入线路名称' })}
+                      error={!!errors.name}
+                      helperText={errors.name?.message}
                     />
-                  </FormControl>
+
+                    {/* 难度和参与方式 */}
+                    <Grid container spacing={2}>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel>难度等级</InputLabel>
+                          <Controller
+                            name="difficulty"
+                            control={control}
+                            rules={{ required: true }}
+                            render={({ field }) => (
+                              <Select {...field} label="难度等级">
+                                <MenuItem value="easy">🟢 简单</MenuItem>
+                                <MenuItem value="medium">🟡 中等</MenuItem>
+                                <MenuItem value="hard">🔴 困难</MenuItem>
+                              </Select>
+                            )}
+                          />
+                        </FormControl>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <Box sx={{
+                          p: 1.5,
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 1,
+                          height: '100%',
+                          display: 'flex',
+                          alignItems: 'center'
+                        }}>
+                          <Controller
+                            name="isPaid"
+                            control={control}
+                            render={({ field }) => (
+                              <RadioGroup row {...field} sx={{ width: '100%', justifyContent: 'space-around' }}>
+                                <FormControlLabel
+                                  value="false"
+                                  control={<Radio size="small" />}
+                                  label="免费"
+                                />
+                                <FormControlLabel
+                                  value="true"
+                                  control={<Radio size="small" />}
+                                  label="付费"
+                                />
+                              </RadioGroup>
+                            )}
+                          />
+                        </Box>
+                      </Grid>
+                    </Grid>
+
+                    {/* 城市选择 */}
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 500, color: 'text.secondary' }}>
+                        📍 所在城市
+                      </Typography>
+                      <Grid container spacing={1.5}>
+                        <Grid size={{ xs: 12, sm: 4 }}>
+                          <Controller
+                            name="province"
+                            control={control}
+                            render={({ field }) => (
+                              <FormControl fullWidth size="small">
+                                <InputLabel>省份</InputLabel>
+                                <Select
+                                  {...field}
+                                  label="省份"
+                                  onChange={(e) => {
+                                    field.onChange(e);
+                                    setValue('city', '');
+                                    setValue('district', '');
+                                  }}
+                                >
+                                  {chinaRegions.map((province) => (
+                                    <MenuItem key={province.code} value={province.code}>
+                                      {province.name}
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                            )}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 4 }}>
+                          <Controller
+                            name="city"
+                            control={control}
+                            render={({ field }) => (
+                              <FormControl fullWidth size="small" disabled={!watch('province')}>
+                                <InputLabel>市</InputLabel>
+                                <Select
+                                  {...field}
+                                  label="市"
+                                  onChange={(e) => {
+                                    field.onChange(e);
+                                    setValue('district', '');
+                                  }}
+                                >
+                                  {getCitiesByProvince(watch('province') || '').map((city) => (
+                                    <MenuItem key={city.code} value={city.code}>
+                                      {city.name}
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                            )}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 4 }}>
+                          <Controller
+                            name="district"
+                            control={control}
+                            render={({ field }) => (
+                              <FormControl fullWidth size="small" disabled={!watch('city')}>
+                                <InputLabel>区/县</InputLabel>
+                                <Select {...field} label="区/县">
+                                  {getDistrictsByCity(watch('province') || '', watch('city') || '').map((district) => (
+                                    <MenuItem key={district.code} value={district.code}>
+                                      {district.name}
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                            )}
+                          />
+                        </Grid>
+                      </Grid>
+                    </Box>
+
+                    {/* 标签 */}
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 500, color: 'text.secondary' }}>
+                        🏷️ 标签
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
+                        <TextField
+                          label="添加标签"
+                          size="small"
+                          value={tagInput}
+                          onChange={(e) => setTagInput(e.target.value)}
+                          onKeyDown={handleKeyDown}
+                          sx={{ flex: 1, maxWidth: 250 }}
+                        />
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={handleAddTag}
+                          startIcon={<Plus size={16} />}
+                        >
+                          添加
+                        </Button>
+                      </Box>
+                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        {tags.map((tag) => (
+                          <Chip
+                            key={tag}
+                            label={tag}
+                            size="small"
+                            onDelete={() => handleRemoveTag(tag)}
+                            color="primary"
+                            variant="outlined"
+                          />
+                        ))}
+                      </Stack>
+                    </Box>
+
+                    {/* 注意事项 */}
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 500, color: 'text.secondary' }}>
+                        ⚠️ 注意事项
+                      </Typography>
+                      <Controller
+                        name="notices"
+                        control={control}
+                        render={({ field }) => (
+                          <TextField
+                            {...field}
+                            fullWidth
+                            multiline
+                            rows={4}
+                            size="small"
+                            placeholder="请输入参与者需要注意的事项，如安全提示、装备要求、天气提醒等"
+                          />
+                        )}
+                      />
+                    </Box>
+                  </Stack>
                 </Grid>
-                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-                  <FormControl component="fieldset">
-                    <FormLabel component="legend" sx={{ fontSize: '0.875rem', mb: 0.5 }}>参与方式</FormLabel>
-                    <Controller
-                      name="isPaid"
-                      control={control}
-                      render={({ field }) => (
-                        <RadioGroup row {...field}>
-                          <FormControlLabel value="true" control={<Radio size="small" />} label="付费" />
-                          <FormControlLabel value="false" control={<Radio size="small" />} label="免费" />
-                        </RadioGroup>
-                      )}
-                    />
-                  </FormControl>
+
+                {/* 右侧：海报图片 */}
+                <Grid size={{ xs: 12, md: 5 }}>
+                  <Box sx={{
+                    height: '100%',
+                    minHeight: 400,
+                    border: '2px dashed',
+                    borderColor: posterImages.length > 0 ? 'primary.main' : 'divider',
+                    borderRadius: 2,
+                    p: 2,
+                    bgcolor: posterImages.length > 0 ? 'primary.50' : 'background.default',
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                      <Typography variant="subtitle2" fontWeight="600">
+                        📸 海报图片
+                      </Typography>
+                      <Button
+                        component="label"
+                        variant="contained"
+                        size="small"
+                        startIcon={<Upload size={16} />}
+                      >
+                        上传
+                        <input
+                          type="file"
+                          hidden
+                          multiple
+                          accept="image/*"
+                          onChange={handlePosterImageUpload}
+                        />
+                      </Button>
+                    </Box>
+
+                    {posterImages.length === 0 ? (
+                      <Box sx={{
+                        flex: 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'text.secondary'
+                      }}>
+                        <Upload size={48} style={{ opacity: 0.3, marginBottom: 16 }} />
+                        <Typography variant="body2" color="text.secondary">
+                          点击上传按钮添加海报图片
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                          支持多张图片上传
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <Box sx={{ flex: 1, overflowY: 'auto' }}>
+                        <Grid container spacing={1.5}>
+                          {posterImages.map((img, imgIndex) => (
+                            <Grid size={{ xs: 6 }} key={imgIndex}>
+                              <Box
+                                sx={{
+                                  position: 'relative',
+                                  paddingTop: '100%',
+                                  borderRadius: 1,
+                                  overflow: 'hidden',
+                                  boxShadow: 1
+                                }}
+                              >
+                                <Box
+                                  component="img"
+                                  src={img}
+                                  alt={`Poster ${imgIndex + 1}`}
+                                  sx={{
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0,
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover'
+                                  }}
+                                />
+                                <IconButton
+                                  size="small"
+                                  sx={{
+                                    position: 'absolute',
+                                    top: 4,
+                                    right: 4,
+                                    bgcolor: 'rgba(0, 0, 0, 0.6)',
+                                    color: 'white',
+                                    '&:hover': {
+                                      bgcolor: 'error.main',
+                                    },
+                                    p: 0.5,
+                                    minWidth: 'auto',
+                                    width: 28,
+                                    height: 28
+                                  }}
+                                  onClick={() => handleRemovePosterImage(imgIndex)}
+                                >
+                                  <X size={16} />
+                                </IconButton>
+                                {imgIndex === 0 && (
+                                  <Chip
+                                    label="封面"
+                                    size="small"
+                                    color="primary"
+                                    sx={{
+                                      position: 'absolute',
+                                      bottom: 4,
+                                      left: 4,
+                                      height: 20,
+                                      fontSize: '0.7rem'
+                                    }}
+                                  />
+                                )}
+                              </Box>
+                            </Grid>
+                          ))}
+                        </Grid>
+                      </Box>
+                    )}
+                  </Box>
                 </Grid>
               </Grid>
 
-              {/* 城市选择 */}
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1.5 }}>所在城市</Typography>
-                <Grid container spacing={2}>
-                  <Grid size={{ xs: 12, sm: 4 }}>
-                    <Controller
-                      name="province"
-                      control={control}
-                      render={({ field }) => (
-                        <FormControl fullWidth size="small">
-                          <InputLabel>省份</InputLabel>
-                          <Select
-                            {...field}
-                            label="省份"
-                            onChange={(e) => {
-                              field.onChange(e);
-                              // 清空市和区
-                              setValue('city', '');
-                              setValue('district', '');
-                            }}
-                          >
-                            {chinaRegions.map((province) => (
-                              <MenuItem key={province.code} value={province.code}>
-                                {province.name}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      )}
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 4 }}>
-                    <Controller
-                      name="city"
-                      control={control}
-                      render={({ field }) => (
-                        <FormControl fullWidth size="small" disabled={!watch('province')}>
-                          <InputLabel>市</InputLabel>
-                          <Select
-                            {...field}
-                            label="市"
-                            onChange={(e) => {
-                              field.onChange(e);
-                              // 清空区
-                              setValue('district', '');
-                            }}
-                          >
-                            {getCitiesByProvince(watch('province') || '').map((city) => (
-                              <MenuItem key={city.code} value={city.code}>
-                                {city.name}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      )}
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 12, sm: 4 }}>
-                    <Controller
-                      name="district"
-                      control={control}
-                      render={({ field }) => (
-                        <FormControl fullWidth size="small" disabled={!watch('city')}>
-                          <InputLabel>区/县</InputLabel>
-                          <Select {...field} label="区/县">
-                            {getDistrictsByCity(watch('province') || '', watch('city') || '').map((district) => (
-                              <MenuItem key={district.code} value={district.code}>
-                                {district.name}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      )}
-                    />
-                  </Grid>
-                </Grid>
-              </Box>
-
               {/* Paid Route Details */}
               {String(isPaid) === 'true' && (
-                <Box sx={{ mt: 2, p: 2, bgcolor: 'primary.50', borderRadius: 1 }}>
+                <Box sx={{ mt: 3, p: 2.5, bgcolor: 'warning.50', borderRadius: 2, border: '1px solid', borderColor: 'warning.200' }}>
+                  <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    💰 付费活动详情
+                  </Typography>
                   <Grid container spacing={2}>
                     <Grid size={{ xs: 12, sm: 6 }}>
                       <TextField
@@ -433,7 +669,7 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
                             fullWidth
                             size="small"
                             type="datetime-local"
-                            label="活动开始时间"
+                            label="活动开始"
                             slotProps={{
                               inputLabel: { shrink: true }
                             }}
@@ -452,7 +688,7 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
                             fullWidth
                             size="small"
                             type="datetime-local"
-                            label="活动结束时间"
+                            label="活动结束"
                             slotProps={{
                               inputLabel: { shrink: true }
                             }}
@@ -471,7 +707,7 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
                             fullWidth
                             size="small"
                             type="datetime-local"
-                            label="报名开始时间"
+                            label="报名开始"
                             slotProps={{
                               inputLabel: { shrink: true }
                             }}
@@ -490,7 +726,7 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
                             fullWidth
                             size="small"
                             type="datetime-local"
-                            label="报名结束时间"
+                            label="报名结束"
                             slotProps={{
                               inputLabel: { shrink: true }
                             }}
@@ -501,64 +737,6 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
                   </Grid>
                 </Box>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Tags */}
-          <Card variant="outlined">
-            <CardContent sx={{ p: 2.5 }}>
-              <Typography variant="subtitle1" fontWeight="600" sx={{ mb: 2 }}>
-                标签
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
-                <TextField
-                  label="添加标签"
-                  size="small"
-                  value={tagInput}
-                  onChange={(e) => setTagInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  sx={{ width: 200 }}
-                />
-                <Button variant="outlined" size="small" onClick={handleAddTag} startIcon={<Plus size={16} />}>
-                  添加
-                </Button>
-              </Box>
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                {tags.map((tag) => (
-                  <Chip
-                    key={tag}
-                    label={tag}
-                    size="small"
-                    onDelete={() => handleRemoveTag(tag)}
-                    color="primary"
-                    variant="outlined"
-                  />
-                ))}
-              </Stack>
-            </CardContent>
-          </Card>
-
-          {/* 注意事项 */}
-          <Card variant="outlined">
-            <CardContent sx={{ p: 2.5 }}>
-              <Typography variant="subtitle1" fontWeight="600" sx={{ mb: 2 }}>
-                注意事项
-              </Typography>
-              <Controller
-                name="notices"
-                control={control}
-                render={({ field }) => (
-                  <TextField
-                    {...field}
-                    fullWidth
-                    multiline
-                    rows={4}
-                    size="small"
-                    label="注意事项"
-                    placeholder="请输入参与者需要注意的事项，如安全提示、装备要求、天气提醒等"
-                  />
-                )}
-              />
             </CardContent>
           </Card>
 
@@ -772,7 +950,7 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
         </Button>
 
         <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button variant="outlined" size="medium" onClick={onCancel}>取消</Button>
+          <Button variant="outlined" size="medium" onClick={handleCancelClick}>取消</Button>
           <Button variant="contained" size="medium" type="submit">保存</Button>
         </Box>
       </Paper>
@@ -839,6 +1017,29 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
           <Button onClick={() => setShowMapModal(false)}>取消</Button>
           <Button onClick={saveLocationToWaypoint} variant="contained" disabled={!tempLocation}>
             确认选择
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Cancel Confirmation Dialog */}
+      <Dialog
+        open={showCancelDialog}
+        onClose={handleCloseCancelDialog}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>确认退出</DialogTitle>
+        <DialogContent>
+          <Typography>
+            您确定要退出吗？未保存的更改将会丢失。
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseCancelDialog} variant="outlined">
+            继续编辑
+          </Button>
+          <Button onClick={handleConfirmCancel} variant="contained" color="error">
+            确认退出
           </Button>
         </DialogActions>
       </Dialog>

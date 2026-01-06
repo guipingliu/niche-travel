@@ -1,4 +1,5 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import {
   Box,
   Drawer,
@@ -12,7 +13,12 @@ import {
   Avatar,
   Stack,
   IconButton,
-  Tooltip
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button
 } from '@mui/material';
 import {
   LayoutDashboard,
@@ -32,11 +38,21 @@ interface SidebarProps {
 export function Sidebar({ mobileOpen, handleDrawerToggle, drawerWidth }: SidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false);
 
-  const handleLogout = () => {
+  const handleLogoutClick = () => {
+    setShowLogoutDialog(true);
+  };
+
+  const handleConfirmLogout = () => {
+    setShowLogoutDialog(false);
     // In a real app, you would clear auth tokens here
     // localStorage.removeItem('token');
     navigate('/login');
+  };
+
+  const handleCloseLogoutDialog = () => {
+    setShowLogoutDialog(false);
   };
 
   const navigation = [
@@ -128,7 +144,7 @@ export function Sidebar({ mobileOpen, handleDrawerToggle, drawerWidth }: Sidebar
           <Tooltip title="退出登录">
             <IconButton
               size="small"
-              onClick={handleLogout}
+              onClick={handleLogoutClick}
               sx={{
                 color: 'grey.400',
                 '&:hover': { color: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
@@ -173,6 +189,29 @@ export function Sidebar({ mobileOpen, handleDrawerToggle, drawerWidth }: Sidebar
       >
         {drawer}
       </Drawer>
+
+      {/* Logout Confirmation Dialog */}
+      <Dialog
+        open={showLogoutDialog}
+        onClose={handleCloseLogoutDialog}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>确认退出登录</DialogTitle>
+        <DialogContent>
+          <Typography>
+            您确定要退出登录吗？
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseLogoutDialog} variant="outlined">
+            取消
+          </Button>
+          <Button onClick={handleConfirmLogout} variant="contained" color="error">
+            退出登录
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

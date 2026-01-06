@@ -23,7 +23,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       login: async (email: string, password: string) => {
         // Mock authentication
-        if (email === 'admin@example.com' && password === 'password') {
+        if (email === 'admin@example.com' && password === '1') {
           set({
             isAuthenticated: true,
             user: {
