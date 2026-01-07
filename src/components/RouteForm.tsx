@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import {
   Box,
@@ -27,13 +27,15 @@ import {
   Chip,
   Paper,
   Card,
-  CardContent
+  CardContent,
+  InputAdornment
 } from '@mui/material';
-import { Plus, Trash2, Map as MapIcon, Search, Upload, X, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Trash2, Map as MapIcon, Search, Upload, X, ArrowUp, ArrowDown, Library } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { chinaRegions, getCitiesByProvince, getDistrictsByCity } from '../data/cityData';
+import { useAttractionStore } from '../store/attractionStore';
 
 // Fix Leaflet marker icon issue
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -138,6 +140,13 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [selectedCoords, setSelectedCoords] = useState<[number, number] | null>(null);
   const [tempLocation, setTempLocation] = useState<{ lat: number, lng: number, name: string } | null>(null);
+  const waypointsEndRef = useRef<HTMLDivElement>(null);
+  const isAppendingRef = useRef(false);
+
+  // Attraction Library Modal state
+  const { attractions } = useAttractionStore();
+  const [showAttractionModal, setShowAttractionModal] = useState(false);
+  const [attractionSearch, setAttractionSearch] = useState('');
 
   // Cancel confirmation dialog state
   const [showCancelDialog, setShowCancelDialog] = useState(false);
@@ -292,6 +301,13 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
     return 'text.primary';
   };
 
+  useEffect(() => {
+    if (isAppendingRef.current) {
+      waypointsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      isAppendingRef.current = false;
+    }
+  }, [waypointFields.length]);
+
   return (
     <Box component="form" onSubmit={handleSubmit(onSubmit)}>
       {/* Form Content */}
@@ -338,34 +354,39 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
                         </FormControl>
                       </Grid>
                       <Grid size={{ xs: 12, sm: 6 }}>
-                        <Box sx={{
-                          p: 1.5,
-                          border: '1px solid',
-                          borderColor: 'divider',
-                          borderRadius: 1,
-                          height: '100%',
-                          display: 'flex',
-                          alignItems: 'center'
-                        }}>
-                          <Controller
-                            name="isPaid"
-                            control={control}
-                            render={({ field }) => (
-                              <RadioGroup row {...field} sx={{ width: '100%', justifyContent: 'space-around' }}>
-                                <FormControlLabel
-                                  value="false"
-                                  control={<Radio size="small" />}
-                                  label="免费"
-                                />
-                                <FormControlLabel
-                                  value="true"
-                                  control={<Radio size="small" />}
-                                  label="付费"
-                                />
-                              </RadioGroup>
-                            )}
-                          />
-                        </Box>
+                        <FormControl fullWidth size="small">
+                          <InputLabel shrink sx={{ bgcolor: 'background.paper', px: 0.5 }}>参与方式</InputLabel>
+                          <Box sx={{
+                            px: 1,
+                            border: '1px solid',
+                            borderColor: 'divider',
+                            borderRadius: 1,
+                            height: 40,
+                            display: 'flex',
+                            alignItems: 'center'
+                          }}>
+                            <Controller
+                              name="isPaid"
+                              control={control}
+                              render={({ field }) => (
+                                <RadioGroup row {...field} sx={{ width: '100%', justifyContent: 'space-around' }}>
+                                  <FormControlLabel
+                                    value="false"
+                                    control={<Radio size="small" />}
+                                    label={<Typography variant="body2">免费</Typography>}
+                                    sx={{ mr: 0 }}
+                                  />
+                                  <FormControlLabel
+                                    value="true"
+                                    control={<Radio size="small" />}
+                                    label={<Typography variant="body2">付费</Typography>}
+                                    sx={{ mr: 0 }}
+                                  />
+                                </RadioGroup>
+                              )}
+                            />
+                          </Box>
+                        </FormControl>
                       </Grid>
                     </Grid>
 
@@ -497,7 +518,8 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
                             {...field}
                             fullWidth
                             multiline
-                            rows={4}
+                            minRows={4}
+                            maxRows={10}
                             size="small"
                             placeholder="请输入参与者需要注意的事项，如安全提示、装备要求、天气提醒等"
                           />
@@ -787,7 +809,8 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
                               {...field}
                               fullWidth
                               multiline
-                              rows={2}
+                              minRows={2}
+                              maxRows={6}
                               size="small"
                               label="描述"
                               error={!!errors.waypoints?.[index]?.description}
@@ -940,14 +963,28 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
           alignItems: 'center'
         }}
       >
-        <Button
-          variant="outlined"
-          size="medium"
-          startIcon={<Plus size={18} />}
-          onClick={() => appendWaypoint({ description: '', images: [], lat: undefined, lng: undefined, locationName: '' })}
-        >
-          添加途径点
-        </Button>
+        <Stack direction="row" spacing={1.5}>
+          <Button
+            variant="outlined"
+            size="medium"
+            startIcon={<Plus size={18} />}
+            onClick={() => {
+              isAppendingRef.current = true;
+              appendWaypoint({ description: '', images: [], lat: undefined, lng: undefined, locationName: '' });
+            }}
+          >
+            添加途径点
+          </Button>
+          <Button
+            variant="outlined"
+            color="info"
+            size="medium"
+            startIcon={<Library size={18} />}
+            onClick={() => setShowAttractionModal(true)}
+          >
+            从景点库选择
+          </Button>
+        </Stack>
 
         <Box sx={{ display: 'flex', gap: 2 }}>
           <Button variant="outlined" size="medium" onClick={handleCancelClick}>取消</Button>
@@ -973,7 +1010,7 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && searchLocation()}
             />
-            <Button variant="contained" onClick={searchLocation} startIcon={<Search size={16} />}>
+            <Button variant="contained" onClick={searchLocation} startIcon={<Search size={16} />} sx={{ flexShrink: 0 }}>
               搜索
             </Button>
           </Box>
@@ -1042,6 +1079,84 @@ export default function RouteForm({ route, onSave, onCancel }: RouteFormProps) {
             确认退出
           </Button>
         </DialogActions>
+      </Dialog>
+
+      {/* Attraction Library Modal */}
+      <Dialog
+        open={showAttractionModal}
+        onClose={() => setShowAttractionModal(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          从景点库选择
+          <IconButton onClick={() => setShowAttractionModal(false)} size="small">
+            <X size={20} />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            fullWidth
+            size="small"
+            placeholder="搜索景点名称..."
+            sx={{ mb: 2 }}
+            value={attractionSearch}
+            onChange={(e) => setAttractionSearch(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search size={18} />
+                </InputAdornment>
+              ),
+            }}
+          />
+          <List sx={{ maxHeight: 400, overflow: 'auto' }}>
+            {attractions
+              .filter(a => a.name.toLowerCase().includes(attractionSearch.toLowerCase()))
+              .map((attraction) => (
+                <ListItem
+                  key={attraction.id}
+                  disablePadding
+                  sx={{
+                    mb: 1,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    borderRadius: 1,
+                    '&:hover': { bgcolor: 'action.hover' }
+                  }}
+                >
+                  <ListItemButton
+                    onClick={() => {
+                      isAppendingRef.current = true;
+                      appendWaypoint({
+                        description: attraction.description,
+                        images: attraction.images,
+                        locationName: attraction.name,
+                        lat: attraction.lat,
+                        lng: attraction.lng,
+                      });
+                      setShowAttractionModal(false);
+                    }}
+                  >
+                    <Box
+                      component="img"
+                      src={attraction.images[0]}
+                      sx={{ width: 60, height: 60, borderRadius: 1, mr: 2, objectFit: 'cover' }}
+                    />
+                    <ListItemText
+                      primary={attraction.name}
+                      secondary={
+                        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                          {attraction.location}
+                        </Typography>
+                      }
+                    />
+                    <Button variant="outlined" size="small">选择</Button>
+                  </ListItemButton>
+                </ListItem>
+              ))}
+          </List>
+        </DialogContent>
       </Dialog>
     </Box>
   );

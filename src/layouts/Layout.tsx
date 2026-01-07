@@ -32,7 +32,7 @@ export default function Layout() {
         }}
       >
         <Toolbar /> {/* Spacer for fixed AppBar */}
-        <Box sx={{ maxWidth: 'lg', mx: 'auto', animation: 'fadeIn 0.5s ease-out' }}>
+        <Box sx={{ animation: 'fadeIn 0.5s ease-out' }}>
           <Outlet />
         </Box>
       </Box>

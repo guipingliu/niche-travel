@@ -1,10 +1,30 @@
-import { Users, Map, Mountain, TrendingUp } from 'lucide-react';
+import { Users, Map, Mountain, TrendingUp, MapPin } from 'lucide-react';
+import {
+  Box,
+  Typography,
+  Grid,
+  Card,
+  CardContent,
+  Avatar,
+  List,
+  ListItem,
+  ListItemAvatar,
+  ListItemText,
+  Divider,
+  Paper,
+  Button,
+  Stack,
+  Chip,
+  alpha,
+  useTheme
+} from '@mui/material';
+import { useNavigate } from 'react-router-dom';
 
 const stats = [
-  { name: '总用户数', value: '1,234', icon: Users, change: '+12%', changeType: 'positive' },
-  { name: '线路数量', value: '56', icon: Map, change: '+5', changeType: 'positive' },
-  { name: '景点数量', value: '89', icon: Mountain, change: '+8', changeType: 'positive' },
-  { name: '本月营收', value: '¥24,580', icon: TrendingUp, change: '+18.2%', changeType: 'positive' },
+  { name: '总用户数', value: '1,234', icon: Users, change: '+12%', changeType: 'positive', color: '#3b82f6' },
+  { name: '线路数量', value: '56', icon: Map, change: '+5', changeType: 'positive', color: '#10b981' },
+  { name: '景点数量', value: '89', icon: Mountain, change: '+8', changeType: 'positive', color: '#8b5cf6' },
+  { name: '本月营收', value: '¥24,580', icon: TrendingUp, change: '+18.2%', changeType: 'positive', color: '#f59e0b' },
 ];
 
 const recentRoutes = [
@@ -15,122 +35,235 @@ const recentRoutes = [
 ];
 
 export default function DashboardPage() {
-  return (
-    <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-gray-900">仪表板</h1>
-        <p className="mt-2 text-sm text-gray-700">欢迎回来，这是您的管理后台概览</p>
-      </div>
+  const navigate = useNavigate();
+  const theme = useTheme();
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+  return (
+    <Box sx={{ width: '100%' }}>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" fontWeight="bold" gutterBottom color="text.primary">
+          仪表板
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          欢迎回来，这是您的管理后台概览
+        </Typography>
+      </Box>
+
+      {/* Stats Cards */}
+      <Grid container spacing={3} sx={{ mb: 4, width: '100%' }}>
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
-            <div
-              key={stat.name}
-              className="relative bg-white pt-5 px-4 pb-12 sm:pt-6 sm:px-6 shadow rounded-lg overflow-hidden"
-            >
-              <dt>
-                <div className="absolute bg-blue-500 rounded-md p-3">
-                  <Icon className="h-6 w-6 text-white" />
-                </div>
-                <p className="ml-16 text-sm font-medium text-gray-500 truncate">{stat.name}</p>
-              </dt>
-              <dd className="ml-16 flex items-baseline">
-                <p className="text-2xl font-semibold text-gray-900">{stat.value}</p>
-                <p className={`ml-2 flex items-baseline text-sm font-semibold ${
-                  stat.changeType === 'positive' ? 'text-green-600' : 'text-red-600'
-                }`}>
-                  {stat.change}
-                </p>
-              </dd>
-            </div>
+            <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={stat.name}>
+              <Card sx={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
+                <CardContent>
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                    <Box>
+                      <Typography variant="body2" color="text.secondary" fontWeight="medium">
+                        {stat.name}
+                      </Typography>
+                      <Typography variant="h4" fontWeight="bold" sx={{ mt: 1, mb: 1 }}>
+                        {stat.value}
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        bgcolor: alpha(stat.color, 0.1),
+                        color: stat.color,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      <Icon size={24} />
+                    </Box>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: stat.changeType === 'positive' ? 'success.main' : 'error.main',
+                        fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                    >
+                      {stat.change}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                      较上月
+                    </Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
           );
         })}
-      </div>
+      </Grid>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white shadow rounded-lg">
-          <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900">最近线路</h3>
-            <p className="mt-1 text-sm text-gray-500">最近创建的旅游线路</p>
-          </div>
-          <div className="px-4 py-5 sm:p-6">
-            <div className="flow-root">
-              <ul className="-mb-8">
-                {recentRoutes.map((route, routeIdx) => (
-                  <li key={route.id}>
-                    <div className="relative pb-8">
-                      {routeIdx !== recentRoutes.length - 1 ? (
-                        <span
-                          className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200"
-                          aria-hidden="true"
-                        />
-                      ) : null}
-                      <div className="relative flex space-x-3">
-                        <div>
-                          <span className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center ring-8 ring-white">
-                            <Map className="h-5 w-5 text-white" />
-                          </span>
-                        </div>
-                        <div className="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
-                          <div>
-                            <p className="text-sm text-gray-900">{route.name}</p>
-                            <p className="text-sm text-gray-500">难度: {route.difficulty}</p>
-                          </div>
-                          <div className="whitespace-nowrap text-right text-sm text-gray-500">
-                            <div>参与人数: {route.participants}</div>
-                            <div>{route.date}</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </li>
+      <Grid container spacing={4} sx={{ width: '100%' }}>
+        {/* Recent Routes */}
+        <Grid size={{ xs: 12, lg: 8 }}>
+          <Card sx={{ height: '100%' }}>
+            <Box sx={{ px: 3, py: 2.5, borderBottom: 1, borderColor: 'divider' }}>
+              <Typography variant="h6" fontWeight="bold">
+                最近线路
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                最近创建的旅游线路
+              </Typography>
+            </Box>
+            <CardContent sx={{ p: 0 }}>
+              <List sx={{ py: 0 }}>
+                {recentRoutes.map((route, index) => (
+                  <Box key={route.id}>
+                    <ListItem sx={{ py: 2.5, px: 3 }}>
+                      <ListItemAvatar>
+                        <Avatar sx={{ bgcolor: 'primary.soft', color: 'primary.main' }}>
+                          <Map size={20} />
+                        </Avatar>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={
+                          <Typography variant="subtitle1" fontWeight="bold">
+                            {route.name}
+                          </Typography>
+                        }
+                        secondary={
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                            难度: {route.difficulty}
+                          </Typography>
+                        }
+                      />
+                      <Box sx={{ textAlign: 'right' }}>
+                        <Typography variant="body2" fontWeight="medium">
+                          {route.participants} 人参与
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" display="block">
+                          {route.date}
+                        </Typography>
+                      </Box>
+                    </ListItem>
+                    {index < recentRoutes.length - 1 && <Divider component="li" />}
+                  </Box>
                 ))}
-              </ul>
-            </div>
-          </div>
-        </div>
+              </List>
+            </CardContent>
+          </Card>
+        </Grid>
 
-        <div className="bg-white shadow rounded-lg">
-          <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900">快速操作</h3>
-            <p className="mt-1 text-sm text-gray-500">常用管理功能</p>
-          </div>
-          <div className="p-6">
-            <div className="grid grid-cols-2 gap-4">
-              <a
-                href="/routes"
-                className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center hover:bg-blue-100 transition-colors"
-              >
-                <Map className="mx-auto h-8 w-8 text-blue-600" />
-                <div className="mt-2 font-medium text-blue-900">新增线路</div>
-              </a>
-              <a
-                href="/attractions"
-                className="bg-green-50 border border-green-200 rounded-lg p-4 text-center hover:bg-green-100 transition-colors"
-              >
-                <Mountain className="mx-auto h-8 w-8 text-green-600" />
-                <div className="mt-2 font-medium text-green-900">新增景点</div>
-              </a>
-              <a
-                href="/users"
-                className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center hover:bg-purple-100 transition-colors"
-              >
-                <Users className="mx-auto h-8 w-8 text-purple-600" />
-                <div className="mt-2 font-medium text-purple-900">用户管理</div>
-              </a>
-              <a
-                href="/routes"
-                className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center hover:bg-yellow-100 transition-colors"
-              >
-                <TrendingUp className="mx-auto h-8 w-8 text-yellow-600" />
-                <div className="mt-2 font-medium text-yellow-900">数据统计</div>
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+        {/* Quick Actions */}
+        <Grid size={{ xs: 12, lg: 4 }}>
+          <Card sx={{ height: '100%' }}>
+            <Box sx={{ px: 3, py: 2.5, borderBottom: 1, borderColor: 'divider' }}>
+              <Typography variant="h6" fontWeight="bold">
+                快速操作
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                常用管理功能
+              </Typography>
+            </Box>
+            <CardContent sx={{ p: 3 }}>
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 6 }}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    onClick={() => navigate('/routes')}
+                    sx={{
+                      height: 120,
+                      flexDirection: 'column',
+                      gap: 1.5,
+                      borderRadius: 2,
+                      borderColor: 'primary.200',
+                      bgcolor: alpha(theme.palette.primary.main, 0.05),
+                      color: 'primary.main',
+                      '&:hover': {
+                        borderColor: 'primary.main',
+                        bgcolor: alpha(theme.palette.primary.main, 0.1),
+                      }
+                    }}
+                  >
+                    <Map size={32} />
+                    <Typography variant="subtitle2" fontWeight="bold">新增线路</Typography>
+                  </Button>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    onClick={() => navigate('/attractions')}
+                    sx={{
+                      height: 120,
+                      flexDirection: 'column',
+                      gap: 1.5,
+                      borderRadius: 2,
+                      borderColor: 'success.200',
+                      bgcolor: alpha(theme.palette.success.main, 0.05),
+                      color: 'success.main',
+                      '&:hover': {
+                        borderColor: 'success.main',
+                        bgcolor: alpha(theme.palette.success.main, 0.1),
+                      }
+                    }}
+                  >
+                    <Mountain size={32} />
+                    <Typography variant="subtitle2" fontWeight="bold">新增景点</Typography>
+                  </Button>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    onClick={() => navigate('/users')}
+                    sx={{
+                      height: 120,
+                      flexDirection: 'column',
+                      gap: 1.5,
+                      borderRadius: 2,
+                      borderColor: 'secondary.200',
+                      bgcolor: alpha(theme.palette.secondary.main, 0.05),
+                      color: 'secondary.main',
+                      '&:hover': {
+                        borderColor: 'secondary.main',
+                        bgcolor: alpha(theme.palette.secondary.main, 0.1),
+                      }
+                    }}
+                  >
+                    <Users size={32} />
+                    <Typography variant="subtitle2" fontWeight="bold">用户管理</Typography>
+                  </Button>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    onClick={() => navigate('/routes')} // Or statistics page if exists
+                    sx={{
+                      height: 120,
+                      flexDirection: 'column',
+                      gap: 1.5,
+                      borderRadius: 2,
+                      borderColor: 'warning.200',
+                      bgcolor: alpha(theme.palette.warning.main, 0.05),
+                      color: 'warning.main',
+                      '&:hover': {
+                        borderColor: 'warning.main',
+                        bgcolor: alpha(theme.palette.warning.main, 0.1),
+                      }
+                    }}
+                  >
+                    <TrendingUp size={32} />
+                    <Typography variant="subtitle2" fontWeight="bold">数据统计</Typography>
+                  </Button>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+    </Box>
   );
 }

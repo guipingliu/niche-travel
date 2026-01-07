@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2, Eye, Map, MapPin } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
@@ -24,8 +24,12 @@ import type { Route, Difficulty } from '../store/routeStore';
 
 export default function RoutesPage() {
   const navigate = useNavigate();
-  const { routes, deleteRoute } = useRouteStore();
+  const { routes, deleteRoute, fetchRoutes } = useRouteStore();
   const [viewingRoute, setViewingRoute] = useState<Route | null>(null);
+
+  useEffect(() => {
+    fetchRoutes();
+  }, [fetchRoutes]);
 
   const handleDelete = (id: number) => {
     if (confirm('确定要删除这条线路吗？')) {
@@ -175,7 +179,7 @@ export default function RoutesPage() {
                 sx={{ borderRadius: 2, mb: 3 }}
               />
 
-              <Grid container spacing={3} sx={{ mb: 4 }}>
+              <Grid container spacing={3} sx={{ mb: 4, width: '100%' }}>
                 <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                   <Typography variant="subtitle2" color="text.secondary">难度</Typography>
                   <Typography variant="body1">{difficultyLabels[viewingRoute.difficulty]}</Typography>

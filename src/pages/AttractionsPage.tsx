@@ -1,383 +1,830 @@
-import { useState } from 'react';
-import { Plus, Pencil, Trash2, Eye, Mountain, Clock, MapPin, DollarSign } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Pencil, Trash2, Eye, Clock, MapPin, Map as MapIcon, DollarSign, Upload, X, Route as RouteIcon, Calendar, Tag, ShieldCheck, Search } from 'lucide-react';
+import {
+  Box,
+  Typography,
+  Button,
+  Grid,
+  Card,
+  CardMedia,
+  CardContent,
+  CardActions,
+  Chip,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Stack,
+  InputAdornment,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemButton,
+  Paper,
+  CircularProgress,
+  Divider,
+  Tooltip
+} from '@mui/material';
+import { useAttractionStore, type Attraction } from '../store/attractionStore';
+import { useRouteStore } from '../store/routeStore';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 
-interface Attraction {
-  id: number;
-  name: string;
-  description: string;
-  images: string[];
-  location: string;
-  tags: string[];
-  openingHours: string;
-  ticketPrice: number;
-  recommendedSeason: string[];
-  facilities: string[];
-}
+// Fix Leaflet icon issue
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
 
-const mockAttractions: Attraction[] = [
-  {
-    id: 1,
-    name: '黄山风景区',
-    description: '中国著名山岳风景区，以奇松、怪石、云海、温泉四绝著称',
-    images: [
-      'https://images.unsplash.com/photo-1512529904539-2034f9e1c8b9?w=400',
-      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-    ],
-    location: '安徽省黄山市',
-    tags: ['山岳', '自然风光', '世界遗产'],
-    openingHours: '07:00 - 17:00',
-    ticketPrice: 190,
-    recommendedSeason: ['春季', '秋季'],
-    facilities: ['索道', '观景台', '游客中心', '餐饮'],
-  },
-  {
-    id: 2,
-    name: '故宫博物院',
-    description: '中国明清两代的皇家宫殿，世界上现存规模最大、保存最为完整的木质结构古建筑群',
-    images: [
-      'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400',
-    ],
-    location: '北京市东城区',
-    tags: ['历史文化', '博物馆', '世界遗产'],
-    openingHours: '08:30 - 17:00',
-    ticketPrice: 60,
-    recommendedSeason: ['全年'],
-    facilities: ['讲解服务', '纪念品店', '休息区', '无障碍设施'],
-  },
-  {
-    id: 3,
-    name: '西湖风景区',
-    description: '中国著名的湖泊风景区，以湖光山色和众多的名胜古迹而闻名',
-    images: [
-      'https://images.unsplash.com/photo-1512529904539-2034f9e1c8b9?w=400',
-    ],
-    location: '浙江省杭州市',
-    tags: ['湖泊', '文化景观', '免费景点'],
-    openingHours: '全天开放',
-    ticketPrice: 0,
-    recommendedSeason: ['春季', '秋季'],
-    facilities: ['游船', '自行车租赁', '观景平台', '茶室'],
-  },
-];
+let DefaultIcon = L.icon({
+  iconUrl: icon,
+  shadowUrl: iconShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+});
+L.Marker.prototype.options.icon = DefaultIcon;
 
 export default function AttractionsPage() {
-  const [attractions, setAttractions] = useState<Attraction[]>(mockAttractions);
+  const { attractions, addAttraction, updateAttraction, deleteAttraction } = useAttractionStore();
+  const { routes, fetchRoutes } = useRouteStore();
   const [showForm, setShowForm] = useState(false);
   const [editingAttraction, setEditingAttraction] = useState<Attraction | null>(null);
   const [viewingAttraction, setViewingAttraction] = useState<Attraction | null>(null);
+  const [formImage, setFormImage] = useState<string | null>(null);
+
+  // 地图选点相关状态
+  const [showMapModal, setShowMapModal] = useState(false);
+  const [mapSearch, setMapSearch] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [tempLat, setTempLat] = useState<number | null>(null);
+  const [tempLng, setTempLng] = useState<number | null>(null);
+
+
+  useEffect(() => {
+    fetchRoutes();
+  }, [fetchRoutes]);
+
+  // 获取关联线路
+  const relatedRoutes = viewingAttraction
+    ? routes.filter(route =>
+      route.waypoints.some(wp => wp.locationName === viewingAttraction.name)
+    )
+    : [];
 
   const handleDelete = (id: number) => {
-    if (confirm('确定要删除这个景点吗？')) {
-      setAttractions(attractions.filter(attraction => attraction.id !== id));
+    if (window.confirm('确定要删除这个景点吗？')) {
+      deleteAttraction(id);
     }
   };
 
+  const handleOpenForm = (attraction?: Attraction) => {
+    if (attraction) {
+      setEditingAttraction(attraction);
+      setFormImage(attraction.images[0] || null);
+      setTempLat(attraction.lat);
+      setTempLng(attraction.lng);
+    } else {
+      setEditingAttraction(null);
+      setFormImage(null);
+      setTempLat(null);
+      setTempLng(null);
+    }
+    setShowForm(true);
+  };
+
+  const handleCloseForm = () => {
+    setShowForm(false);
+    setEditingAttraction(null);
+    setFormImage(null);
+  };
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const formData = new FormData(e.target as HTMLFormElement);
+    const data = {
+      name: formData.get('name') as string,
+      location: formData.get('location') as string,
+      description: formData.get('description') as string,
+      openingHours: formData.get('openingHours') as string,
+      ticketPrice: Number(formData.get('ticketPrice')),
+      images: formImage ? [formImage] : [],
+      tags: (formData.get('tags') as string).split(',').map(t => t.trim()).filter(t => t !== ''),
+      facilities: (formData.get('facilities') as string).split(',').map(f => f.trim()).filter(f => f !== ''),
+      recommendedSeason: (formData.get('recommendedSeason') as string).split(',').map(s => s.trim()).filter(s => s !== ''),
+      lat: tempLat || 30.0,
+      lng: tempLng || 120.0,
+    };
+
+    if (editingAttraction) {
+      updateAttraction(editingAttraction.id, data);
+    } else {
+      addAttraction(data);
+    }
+    handleCloseForm();
+  };
+
+  // 地图点击事件处理
+  function MapEvents() {
+    useMapEvents({
+      click(e) {
+        setTempLat(e.latlng.lat);
+        setTempLng(e.latlng.lng);
+      },
+    });
+    return null;
+  }
+
+  // 位置搜索
+  const handleMapSearch = async () => {
+    if (!mapSearch.trim()) return;
+    setIsSearching(true);
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(mapSearch)}`);
+      const data = await response.json();
+      setSearchResults(data);
+    } catch (error) {
+      console.error('Search failed:', error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const selectSearchResult = (result: any) => {
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    setTempLat(lat);
+    setTempLng(lng);
+    setSearchResults([]);
+  };
 
   return (
-    <div>
-      <div className="mb-8 flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">景点管理</h1>
-          <p className="mt-2 text-sm text-gray-700">管理旅游景点信息，包括景点详情、图片、开放时间等</p>
-        </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+    <Box sx={{ width: '100%' }}>
+      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box>
+          <Typography variant="h4" fontWeight="bold" gutterBottom>
+            景点管理
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            维护旅游景点信息，包括单张封面图、坐标定位与服务设施
+          </Typography>
+        </Box>
+        <Button
+          variant="contained"
+          sx={{
+            borderRadius: 2,
+            px: 3,
+            bgcolor: 'success.main',
+            '&:hover': { bgcolor: 'success.dark' }
+          }}
+          startIcon={<Plus size={20} />}
+          onClick={() => handleOpenForm()}
         >
-          <Plus className="h-4 w-4 mr-2" />
           新增景点
-        </button>
-      </div>
+        </Button>
+      </Box>
 
-      {showForm || editingAttraction ? (
-        <div className="mb-8 bg-white shadow sm:rounded-lg p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-6">
-            {editingAttraction ? '编辑景点' : '新增景点'}
-          </h3>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            // For now, just close the form
-            setShowForm(false);
-            setEditingAttraction(null);
-          }} className="space-y-6">
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  景点名称 *
-                </label>
-                <input
-                  type="text"
-                  defaultValue={editingAttraction?.name}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  位置 *
-                </label>
-                <input
-                  type="text"
-                  defaultValue={editingAttraction?.location}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="例如：北京市东城区"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  描述 *
-                </label>
-                <textarea
-                  rows={3}
-                  defaultValue={editingAttraction?.description}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  开放时间
-                </label>
-                <input
-                  type="text"
-                  defaultValue={editingAttraction?.openingHours}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="例如：08:00 - 18:00"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  门票价格 (元)
-                </label>
-                <input
-                  type="number"
-                  defaultValue={editingAttraction?.ticketPrice}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end space-x-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowForm(false);
-                  setEditingAttraction(null);
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              >
-                取消
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-              >
-                保存景点
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
-
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <Grid container spacing={3} sx={{ width: '100%' }}>
         {attractions.map((attraction) => (
-          <div key={attraction.id} className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="aspect-w-16 aspect-h-9">
-              <img
-                src={attraction.images[0] || 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400'}
-                alt={attraction.name}
-                className="w-full h-48 object-cover"
-              />
-            </div>
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-gray-900">{attraction.name}</h3>
-                {attraction.ticketPrice === 0 && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    免费
-                  </span>
-                )}
-              </div>
-              <p className="mt-2 text-sm text-gray-500 line-clamp-2">{attraction.description}</p>
-
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center text-sm text-gray-500">
-                  <MapPin className="h-4 w-4 mr-1" />
-                  {attraction.location}
-                </div>
-                <div className="flex items-center text-sm text-gray-500">
-                  <Clock className="h-4 w-4 mr-1" />
-                  {attraction.openingHours}
-                </div>
-                {attraction.ticketPrice > 0 && (
-                  <div className="flex items-center text-sm text-gray-500">
-                    <DollarSign className="h-4 w-4 mr-1" />
-                    ¥{attraction.ticketPrice}
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-1">
-                {attraction.tags.slice(0, 3).map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                  >
-                    {tag}
-                  </span>
-                ))}
-                {attraction.tags.length > 3 && (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                    +{attraction.tags.length - 3}
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-6 flex justify-between">
-                <button
-                  onClick={() => setViewingAttraction(attraction)}
-                  className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  <Eye className="h-4 w-4 mr-1" />
-                  查看
-                </button>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setEditingAttraction(attraction)}
-                    className="inline-flex items-center p-2 border border-transparent rounded-md text-blue-600 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    title="编辑"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(attraction.id)}
-                    className="inline-flex items-center p-2 border border-transparent rounded-md text-red-600 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                    title="删除"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={attraction.id}>
+            <Card sx={{
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              borderRadius: 3,
+              overflow: 'hidden',
+              transition: 'transform 0.2s, box-shadow 0.2s',
+              '&:hover': {
+                transform: 'translateY(-4px)',
+                boxShadow: '0 12px 24px rgba(0,0,0,0.1)'
+              }
+            }}>
+              <Box sx={{ position: 'relative' }}>
+                <CardMedia
+                  component="img"
+                  height="200"
+                  image={attraction.images[0] || 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400'}
+                  alt={attraction.name}
+                />
+                <Box sx={{
+                  position: 'absolute',
+                  top: 12,
+                  right: 12,
+                  bgcolor: 'rgba(255,255,255,0.9)',
+                  backdropFilter: 'blur(4px)',
+                  borderRadius: 2,
+                  px: 1,
+                  py: 0.5,
+                  display: 'flex',
+                  alignItems: 'center',
+                  boxShadow: 1
+                }}>
+                  <Typography variant="caption" fontWeight="bold" color="primary">
+                    {attraction.ticketPrice > 0 ? `¥${attraction.ticketPrice}` : '免费'}
+                  </Typography>
+                </Box>
+              </Box>
+              <CardContent sx={{ flexGrow: 1, pt: 2 }}>
+                <Typography variant="h6" fontWeight="bold" noWrap gutterBottom>
+                  {attraction.name}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{
+                  mb: 2,
+                  height: 40,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  lineHeight: 1.4
+                }}>
+                  {attraction.description}
+                </Typography>
+                <Stack spacing={1}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <MapPin size={14} className="text-blue-500" />
+                    <Typography variant="caption" color="text.secondary" noWrap>{attraction.location}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Clock size={14} className="text-orange-500" />
+                    <Typography variant="caption" color="text.secondary">{attraction.openingHours}</Typography>
+                  </Box>
+                </Stack>
+                <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  {attraction.tags.slice(0, 3).map(tag => (
+                    <Chip key={tag} label={tag} size="small" variant="outlined" sx={{ fontSize: '0.7rem', height: 20 }} />
+                  ))}
+                </Box>
+              </CardContent>
+              <Divider sx={{ opacity: 0.6 }} />
+              <CardActions sx={{ px: 2, py: 1.5, justifyContent: 'space-between' }}>
+                <Box>
+                  <Tooltip title="查看详情">
+                    <IconButton size="small" color="primary" onClick={() => setViewingAttraction(attraction)}>
+                      <Eye size={18} />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="编辑">
+                    <IconButton size="small" color="info" onClick={() => handleOpenForm(attraction)}>
+                      <Pencil size={18} />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+                <Tooltip title="删除">
+                  <IconButton size="small" color="error" onClick={() => handleDelete(attraction.id)}>
+                    <Trash2 size={18} />
+                  </IconButton>
+                </Tooltip>
+              </CardActions>
+            </Card>
+          </Grid>
         ))}
-      </div>
+      </Grid>
 
-      {attractions.length === 0 && (
-        <div className="text-center py-12">
-          <Mountain className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">暂无景点</h3>
-          <p className="mt-1 text-sm text-gray-500">开始创建第一个旅游景点吧！</p>
-          <div className="mt-6">
-            <button
-              onClick={() => setShowForm(true)}
-              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              新增景点
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Form Dialog - Optimized Layout */}
+      <Dialog
+        open={showForm}
+        onClose={handleCloseForm}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 4, overflow: 'hidden' }
+        }}
+      >
+        <form onSubmit={handleFormSubmit}>
+          <DialogTitle sx={{ px: 3, pt: 3, pb: 2 }}>
+            <Typography variant="h5" fontWeight="bold">
+              {editingAttraction ? '编辑景点' : '新增旅游景点'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              完善景点的基本信息、图片及地理坐标
+            </Typography>
+          </DialogTitle>
+          <DialogContent sx={{ px: 3, py: 0 }}>
+            <Box sx={{ py: 2 }}>
+              <Grid container spacing={4} sx={{ width: '100%', m: 0 }}>
+                {/* Left Side: Images */}
+                <Grid size={{ xs: 12, md: 4 }} sx={{ p: 0 }}>
+                  <Typography variant="subtitle2" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    封面图 <Typography variant="caption" color="text.secondary">(限一张)</Typography>
+                  </Typography>
+                  <Box
+                    sx={{
+                      width: '100%',
+                      aspectRatio: '3/4',
+                      borderRadius: 3,
+                      border: '2px dashed',
+                      borderColor: formImage ? 'primary.main' : 'divider',
+                      bgcolor: 'action.hover',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        borderColor: 'primary.main',
+                        bgcolor: 'primary.50'
+                      }
+                    }}
+                    component="label"
+                  >
+                    {formImage ? (
+                      <>
+                        <Box
+                          component="img"
+                          src={formImage}
+                          sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                        <Box sx={{
+                          position: 'absolute',
+                          inset: 0,
+                          bgcolor: 'rgba(0,0,0,0.4)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          opacity: 0,
+                          transition: 'opacity 0.2s',
+                          '&:hover': { opacity: 1 }
+                        }}>
+                          <Typography variant="body2" color="white" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            <Upload size={16} /> 更换图片
+                          </Typography>
+                        </Box>
+                      </>
+                    ) : (
+                      <Stack alignItems="center" spacing={1}>
+                        <Box sx={{
+                          p: 2,
+                          borderRadius: '50%',
+                          bgcolor: 'background.paper',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+                        }}>
+                          <Upload size={32} className="text-gray-400" />
+                        </Box>
+                        <Typography variant="body2" color="text.secondary">点击或拖拽上传</Typography>
+                      </Stack>
+                    )}
+                    <input type="file" hidden accept="image/*" onChange={handleImageUpload} />
+                  </Box>
+                </Grid>
 
-      {viewingAttraction && (
-        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-gray-900">{viewingAttraction.name}</h3>
-                <button
-                  onClick={() => setViewingAttraction(null)}
-                  className="text-gray-400 hover:text-gray-500"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-            <div className="px-6 py-4">
-              {viewingAttraction.images.length > 0 && (
-                <div className="mb-6">
-                  <div className="grid grid-cols-2 gap-2">
-                    {viewingAttraction.images.map((img, index) => (
-                      <img
-                        key={index}
-                        src={img}
-                        alt={`${viewingAttraction.name} ${index + 1}`}
-                        className="w-full h-48 object-cover rounded-lg"
+                {/* Right Side: Fields */}
+                <Grid size={{ xs: 12, md: 8 }} sx={{ p: 0 }}>
+                  <Stack spacing={2.5}>
+                    <Box>
+                      <Typography variant="subtitle2" fontWeight="bold" gutterBottom>核心信息</Typography>
+                      <Grid container spacing={2}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            name="name"
+                            label="景点名称"
+                            required
+                            defaultValue={editingAttraction?.name}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            name="ticketPrice"
+                            label="门票价格"
+                            type="number"
+                            defaultValue={editingAttraction?.ticketPrice}
+                            InputProps={{
+                              startAdornment: <InputAdornment position="start"><DollarSign size={16} /></InputAdornment>,
+                            }}
+                          />
+                        </Grid>
+                        <Grid size={12}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            name="location"
+                            label="具体地址"
+                            required
+                            defaultValue={editingAttraction?.location}
+                            InputProps={{
+                              startAdornment: <InputAdornment position="start"><MapPin size={16} /></InputAdornment>,
+                              endAdornment: (
+                                <InputAdornment position="end">
+                                  <Tooltip title="在地图上选择坐标">
+                                    <IconButton onClick={() => setShowMapModal(true)} size="small" color="primary">
+                                      <MapIcon size={18} />
+                                    </IconButton>
+                                  </Tooltip>
+                                </InputAdornment>
+                              )
+                            }}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 6 }}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            name="lat"
+                            label="经度"
+                            type="number"
+                            value={tempLat || ''}
+                            onChange={(e) => setTempLat(Number(e.target.value))}
+                            required
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 6 }}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            name="lng"
+                            label="纬度"
+                            type="number"
+                            value={tempLng || ''}
+                            onChange={(e) => setTempLng(Number(e.target.value))}
+                            required
+                          />
+                        </Grid>
+                      </Grid>
+                    </Box>
+
+                    <Divider />
+
+                    <Box>
+                      <Typography variant="subtitle2" fontWeight="bold" gutterBottom>运营配置</Typography>
+                      <Grid container spacing={2}>
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            name="openingHours"
+                            label="开放时间"
+                            placeholder="08:00 - 18:00"
+                            defaultValue={editingAttraction?.openingHours}
+                            InputProps={{
+                              startAdornment: <InputAdornment position="start"><Clock size={16} /></InputAdornment>,
+                            }}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            name="recommendedSeason"
+                            label="推荐季节"
+                            placeholder="春季, 秋季"
+                            defaultValue={editingAttraction?.recommendedSeason.join(', ')}
+                            InputProps={{
+                              startAdornment: <InputAdornment position="start"><Calendar size={16} /></InputAdornment>,
+                            }}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            name="tags"
+                            label="景点标签"
+                            placeholder="标签1, 标签2"
+                            defaultValue={editingAttraction?.tags.join(', ')}
+                            InputProps={{
+                              startAdornment: <InputAdornment position="start"><Tag size={16} /></InputAdornment>,
+                            }}
+                          />
+                        </Grid>
+                        <Grid size={{ xs: 12, sm: 6 }}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            name="facilities"
+                            label="服务设施"
+                            placeholder="设施1, 设施2"
+                            defaultValue={editingAttraction?.facilities.join(', ')}
+                            InputProps={{
+                              startAdornment: <InputAdornment position="start"><ShieldCheck size={16} /></InputAdornment>,
+                            }}
+                          />
+                        </Grid>
+                      </Grid>
+                    </Box>
+
+                    <Box>
+                      <Typography variant="subtitle2" fontWeight="bold" gutterBottom>景点描述</Typography>
+                      <TextField
+                        fullWidth
+                        name="description"
+                        multiline
+                        rows={3}
+                        required
+                        defaultValue={editingAttraction?.description}
+                        placeholder="请输入景点的详细背景和特色介绍..."
+                        sx={{
+                          '& .MuiOutlinedInput-root': { borderRadius: 2 }
+                        }}
                       />
-                    ))}
-                  </div>
-                </div>
-              )}
+                    </Box>
+                  </Stack>
+                </Grid>
+              </Grid>
+            </Box>
+          </DialogContent>
+          <Box sx={{ height: 16 }} />
+          <DialogActions sx={{ px: 4, pb: 3, pt: 0, gap: 1 }}>
+            <Button
+              onClick={handleCloseForm}
+              variant="outlined"
+              sx={{ borderRadius: 2, px: 3, borderColor: 'divider', color: 'text.primary' }}
+            >
+              取消编辑
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              sx={{ borderRadius: 2, px: 5, boxShadow: 0 }}
+            >
+              确认保存
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500">描述</h4>
-                  <p className="mt-1 text-gray-900">{viewingAttraction.description}</p>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500">位置</h4>
-                  <p className="mt-1 text-gray-900">{viewingAttraction.location}</p>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500">开放时间</h4>
-                  <p className="mt-1 text-gray-900">{viewingAttraction.openingHours}</p>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500">门票价格</h4>
-                  <p className="mt-1 text-gray-900">
-                    {viewingAttraction.ticketPrice === 0 ? '免费' : `¥${viewingAttraction.ticketPrice}`}
-                  </p>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500">推荐季节</h4>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {viewingAttraction.recommendedSeason.map((season) => (
-                      <span
-                        key={season}
-                        className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800"
-                      >
-                        {season}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <h4 className="text-sm font-medium text-gray-500">标签</h4>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {viewingAttraction.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="md:col-span-2">
-                  <h4 className="text-sm font-medium text-gray-500">设施服务</h4>
-                  <div className="mt-1 flex flex-wrap gap-2">
-                    {viewingAttraction.facilities.map((facility) => (
-                      <span
-                        key={facility}
-                        className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800"
-                      >
-                        {facility}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
-              <button
-                onClick={() => setViewingAttraction(null)}
-                className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+      {/* Map Modal */}
+      <Dialog
+        open={showMapModal}
+        onClose={() => setShowMapModal(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 4, overflow: 'hidden' } }}
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6" fontWeight="bold">选取地理坐标</Typography>
+          <IconButton onClick={() => setShowMapModal(false)} size="small"><X size={20} /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 0 }}>
+          <Box sx={{ p: 2, display: 'flex', gap: 1, bgcolor: 'background.default' }}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="搜索地点，例如：黄山、天安门..."
+              value={mapSearch}
+              onChange={(e) => setMapSearch(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleMapSearch()}
+              sx={{ bgcolor: 'background.paper', borderRadius: 1 }}
+            />
+            <Button
+              variant="contained"
+              sx={{ flexShrink: 0, borderRadius: 1.5 }}
+              onClick={handleMapSearch}
+              disabled={isSearching}
+              startIcon={isSearching ? <CircularProgress size={16} color="inherit" /> : <Search size={18} />}
+            >
+              搜索
+            </Button>
+          </Box>
+
+          <Box sx={{ position: 'relative' }}>
+            {searchResults.length > 0 && (
+              <Paper sx={{
+                position: 'absolute',
+                top: 0,
+                left: 16,
+                right: 16,
+                zIndex: 1001,
+                maxHeight: 250,
+                overflow: 'auto',
+                boxShadow: 4,
+                borderRadius: 2,
+                mt: 1
+              }}>
+                <List dense>
+                  {searchResults.map((result, idx) => (
+                    <ListItem key={idx} disablePadding>
+                      <ListItemButton onClick={() => selectSearchResult(result)}>
+                        <ListItemText
+                          primary={result.display_name}
+                          secondary={`Lat: ${result.lat}, Lng: ${result.lon}`}
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                  ))}
+                </List>
+              </Paper>
+            )}
+
+            <Box sx={{ height: 450, width: '100%', zIndex: 1 }}>
+              <MapContainer
+                center={[tempLat || 30.0, tempLng || 120.0]}
+                zoom={tempLat ? 15 : 4}
+                style={{ height: '100%', width: '100%' }}
               >
-                关闭
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+                <TileLayer
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  attribution='&copy; OpenStreetMap'
+                />
+                <MapEvents />
+                {tempLat && tempLng && (
+                  <Marker position={[tempLat, tempLng]} />
+                )}
+              </MapContainer>
+            </Box>
+          </Box>
+          <Box sx={{ p: 2, bgcolor: 'primary.50' }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Box>
+                <Typography variant="caption" color="primary.main" fontWeight="bold">当前位置</Typography>
+                <Typography variant="body2" fontWeight="medium">
+                  {tempLat ? `${tempLat.toFixed(6)}, ${tempLng?.toFixed(6)}` : '未在地图上标注'}
+                </Typography>
+              </Box>
+              {tempLat && (
+                <Button size="small" color="primary" onClick={() => {
+                  setTempLat(null);
+                  setTempLng(null);
+                }}>重置坐标</Button>
+              )}
+            </Stack>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setShowMapModal(false)}>取消</Button>
+          <Button
+            variant="contained"
+            onClick={() => setShowMapModal(false)}
+            disabled={!tempLat}
+            sx={{ px: 4 }}
+          >
+            确认选点
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Detail Dialog - Consistent with Form */}
+      <Dialog open={!!viewingAttraction} onClose={() => setViewingAttraction(null)} maxWidth="lg" fullWidth PaperProps={{ sx: { borderRadius: 4 } }}>
+        {viewingAttraction && (
+          <>
+            <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+              <Box>
+                <Typography variant="h5" fontWeight="bold">{viewingAttraction.name}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <MapPin size={14} /> {viewingAttraction.location}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 0.5 }}>
+                {viewingAttraction.tags.map(tag => (
+                  <Chip key={tag} label={tag} size="small" variant="filled" color="primary" />
+                ))}
+              </Box>
+            </DialogTitle>
+            <DialogContent dividers sx={{ p: 3 }}>
+              <Grid container spacing={4} sx={{ width: '100%', m: 0 }}>
+                <Grid size={{ xs: 12, lg: 7 }} sx={{ p: 0 }}>
+                  <Box
+                    component="img"
+                    src={viewingAttraction.images[0]}
+                    sx={{ width: '100%', borderRadius: 3, aspectRatio: '16/9', objectFit: 'cover', boxShadow: 2 }}
+                  />
+                  <Box sx={{ mt: 3 }}>
+                    <Typography variant="h6" fontWeight="bold" gutterBottom>关联线路</Typography>
+                    {relatedRoutes.length === 0 ? (
+                      <Paper variant="outlined" sx={{ p: 4, textAlign: 'center', borderRadius: 2, bgcolor: 'action.hover' }}>
+                        <Typography variant="body2" color="text.secondary">暂无关联线路信息</Typography>
+                      </Paper>
+                    ) : (
+                      <Grid container spacing={2}>
+                        {relatedRoutes.map(route => (
+                          <Grid size={{ xs: 12, sm: 6 }} key={route.id}>
+                            <Box
+                              sx={{
+                                display: 'flex',
+                                gap: 2,
+                                p: 1.5,
+                                borderRadius: 3,
+                                border: '1px solid',
+                                borderColor: 'divider',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                '&:hover': {
+                                  borderColor: 'primary.main',
+                                  bgcolor: 'primary.50',
+                                  transform: 'scale(1.02)'
+                                }
+                              }}
+                            >
+                              <Box
+                                component="img"
+                                src={route.posterImage}
+                                sx={{ width: 80, height: 60, borderRadius: 2, objectFit: 'cover' }}
+                              />
+                              <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                                <Typography variant="subtitle2" fontWeight="bold" noWrap>
+                                  {route.name}
+                                </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                  <Chip
+                                    label={route.difficulty === 'easy' ? '简单' : route.difficulty === 'medium' ? '中等' : '困难'}
+                                    size="small"
+                                    color={route.difficulty === 'easy' ? 'success' : route.difficulty === 'medium' ? 'warning' : 'error'}
+                                    sx={{ height: 18, fontSize: '0.65rem' }}
+                                  />
+                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <RouteIcon size={12} /> {route.waypoints.length} 站
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            </Box>
+                          </Grid>
+                        ))}
+                      </Grid>
+                    )}
+                  </Box>
+                </Grid>
+                <Grid size={{ xs: 12, lg: 5 }} sx={{ p: 0 }}>
+                  <Stack spacing={4}>
+                    <Box>
+                      <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ color: 'primary.main' }}>景点故事</Typography>
+                      <Typography variant="body1" sx={{ color: 'text.secondary', lineHeight: 1.8 }}>
+                        {viewingAttraction.description}
+                      </Typography>
+                    </Box>
+
+                    <Box>
+                      <Typography variant="subtitle1" fontWeight="bold" gutterBottom>详情信息</Typography>
+                      <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, bgcolor: 'background.default' }}>
+                        <Grid container spacing={3}>
+                          <Grid size={6}>
+                            <Typography variant="caption" color="text.secondary">开放时间</Typography>
+                            <Typography variant="body2" fontWeight="medium" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <Clock size={14} /> {viewingAttraction.openingHours}
+                            </Typography>
+                          </Grid>
+                          <Grid size={6}>
+                            <Typography variant="caption" color="text.secondary">门票参考</Typography>
+                            <Typography variant="body2" fontWeight="bold" color="primary">
+                              ¥ {viewingAttraction.ticketPrice}
+                            </Typography>
+                          </Grid>
+                          <Grid size={6}>
+                            <Typography variant="caption" color="text.secondary">推荐季节</Typography>
+                            <Typography variant="body2" fontWeight="medium">{viewingAttraction.recommendedSeason.join(', ')}</Typography>
+                          </Grid>
+                          <Grid size={6}>
+                            <Typography variant="caption" color="text.secondary">地理坐标</Typography>
+                            <Typography variant="body2" fontWeight="medium" sx={{ fontSize: '0.75rem' }}>
+                              {viewingAttraction.lat.toFixed(4)}, {viewingAttraction.lng.toFixed(4)}
+                            </Typography>
+                          </Grid>
+                        </Grid>
+                      </Paper>
+                    </Box>
+
+                    <Box>
+                      <Typography variant="subtitle1" fontWeight="bold" gutterBottom>服务设施</Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {viewingAttraction.facilities.map(facility => (
+                          <Chip
+                            key={facility}
+                            label={facility}
+                            size="small"
+                            variant="outlined"
+                            sx={{ bgcolor: 'background.paper' }}
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  </Stack>
+                </Grid>
+              </Grid>
+            </DialogContent>
+            <DialogActions sx={{ p: 3 }}>
+              <Button onClick={() => setViewingAttraction(null)}>返回列表</Button>
+              <Button
+                variant="contained"
+                sx={{ borderRadius: 2, px: 4 }}
+                onClick={() => {
+                  const current = viewingAttraction;
+                  setViewingAttraction(null);
+                  handleOpenForm(current);
+                }}
+              >
+                进入编辑
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
+    </Box>
   );
 }
